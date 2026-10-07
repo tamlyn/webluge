@@ -64,10 +64,12 @@ file(GLOB_RECURSE host_sources CONFIGURE_DEPENDS
 	${CMAKE_CURRENT_LIST_DIR}/src/*.c
 	${CMAKE_CURRENT_LIST_DIR}/src/*.cpp
 )
+list(FILTER host_sources EXCLUDE REGEX "/src/main\\.cpp$")
 
-add_executable(webluge ${firmware_sources} ${host_sources})
+# Everything but main, so that tests can link the firmware too.
+add_library(firmware OBJECT ${firmware_sources} ${host_sources})
 
-target_include_directories(webluge PRIVATE
+target_include_directories(firmware PUBLIC
 	# First, so that our replacements shadow the firmware's headers of the same name.
 	${CMAKE_CURRENT_LIST_DIR}/src/include
 	${generated}
@@ -79,15 +81,17 @@ target_include_directories(webluge PRIVATE
 	${FIRMWARE}/src/NE10/modules
 	${FIRMWARE}/src/fatfs
 	${FIRMWARE}/src/lib
+	${CMAKE_CURRENT_LIST_DIR}/src
 )
 
-target_compile_definitions(webluge PRIVATE
+target_compile_definitions(firmware PUBLIC
 	WEBLUGE=1
 	USE_TASK_MANAGER
 	_GNU_SOURCE
+	FF_USE_MKFS=1
 )
 
-target_compile_options(webluge PRIVATE
+target_compile_options(firmware PUBLIC
 	-fsigned-char
 	-fno-exceptions
 	-fno-rtti
@@ -98,10 +102,12 @@ target_compile_options(webluge PRIVATE
 	-Wno-everything
 )
 
-target_link_options(webluge PRIVATE
+target_link_options(firmware PUBLIC
 	-sERROR_ON_UNDEFINED_SYMBOLS=1
 	-sENVIRONMENT=node
 	-sEXIT_RUNTIME=1
+	# Gives the program the host's filesystem, for card folders and images.
+	-sNODERAWFS=1
 	# The firmware uses fixed addresses for SDRAM (0x0C000000-0x10000000) and on-chip RAM (0x20000000-0x20300000).
 	# Starting Emscripten's own data, stack and heap above them leaves those ranges free for the firmware.
 	# Memory that's never touched costs nothing, so the gap is cheap.
@@ -110,3 +116,12 @@ target_link_options(webluge PRIVATE
 	-sALLOW_MEMORY_GROWTH=1
 	-sMAXIMUM_MEMORY=4gb
 )
+
+add_executable(webluge src/main.cpp)
+target_link_libraries(webluge PRIVATE firmware)
+
+enable_testing()
+add_executable(storage_test tests/storage/storage_test.cpp)
+target_link_libraries(storage_test PRIVATE firmware)
+# emcmake runs tests under Node.
+add_test(NAME storage COMMAND storage_test)

@@ -10,4 +10,9 @@ public:
 	void displayPopup(char const* newText, int8_t numFlashes = 3, bool alignRight = false, uint8_t drawDot = 255,
 	                  int32_t blinkSpeed = 1, PopupType type = PopupType::GENERAL) override;
 	void displayError(Error error) override;
+
+	int errorCount() const { return errorCount_; }
+
+private:
+	int errorCount_ = 0;
 };

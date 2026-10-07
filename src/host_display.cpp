@@ -16,6 +16,7 @@ void HostDisplay::displayPopup(char const* newText, int8_t numFlashes, bool alig
 void HostDisplay::displayError(Error error) {
 	if (error != Error::NONE) {
 		std::fprintf(stderr, "Error %d\n", (int)error);
+		errorCount_++;
 	}
 	SevenSegment::displayError(error);
 }

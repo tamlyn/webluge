@@ -57,7 +57,7 @@ Every checkpoint in this phase is verified by `tests/golden/check.sh`, which bui
 
 ### Phase 2: Whole firmware compiles and boots under Emscripten
 
-Build with `mise exec -- emcmake cmake -B build -G Ninja` then `mise exec -- ninja -C build`.
+Build with `mise exec -- emcmake cmake -B build -G Ninja` then `mise exec -- ninja -C build`. Run the host tests with `mise exec -- ctest --test-dir build`.
 
 - [x] **2.1 Build system.** A CMake project in this repo that compiles `src/deluge` and FatFs with Emscripten, excluding the hardware sources and the ARM-only files in [ARM_AUDIT.md](ARM_AUDIT.md), and adding `src/dsp/neon_fm_kernel.cpp`. Flags: `-msimd128`, NEON translation enabled, `-ffp-contract=off` (never `fast`, see 1.4), no fast-math.
   *Verify:* `cmake --build` produces a `.wasm` and JS loader with zero unresolved symbols (`-sERROR_ON_UNDEFINED_SYMBOLS=1`).
@@ -70,7 +70,7 @@ Build with `mise exec -- emcmake cmake -B build -G Ninja` then `mise exec -- nin
   - the timers;
   - the SD card.
   
-  *Verify:* `node build/webluge.js` runs firmware initialisation to the point of setting up a blank song (`setupBlankSong`) and exits cleanly, logging that it got there.
+  *Verify:* `node build/webluge.js` runs firmware initialisation to the point of setting up a blank song (`setupBlankSong`) and exits cleanly, logging that it got there. Since Phase 3 the CLI boots only to load a song, so 3.3's check covers this.
 - [x] **2.4 32-bit pointer assumptions.** Nothing to fix on wasm32, but note any casts that break the build.
   *Verify:* the build has no pointer-truncation warnings, or each remaining one is explained in Discoveries.
 
@@ -78,12 +78,14 @@ Build with `mise exec -- emcmake cmake -B build -G Ninja` then `mise exec -- nin
 
 Samples stream from the SD card by mapping FAT clusters straight to sector reads, so a real FAT filesystem is required.
 
-- [ ] **3.1 In-memory block device.** FatFs's disk layer (`diskio.c`) backed by a byte array.
-  *Verify:* a host test formats the array with `f_mkfs`, writes files, reads them back byte-identical, and reads the clusters through `clst2sect` + `disk_read`.
-- [ ] **3.2 Image builder.** Build a FAT image from a directory tree laid out like the Deluge SD card (`SONGS/`, `SAMPLES/`, …), using FatFs itself.
-  *Verify:* the CLI builds an image from `reference/<song>/`, and `mdir`/`hdiutil` on macOS lists the same files with matching sizes.
-- [ ] **3.3 Song load.** Load a song XML through the firmware's own storage manager, samples included.
-  *Verify:* for each reference song, the CLI logs the song name, the number of clips/instruments and the number of samples loaded; no loading errors.
+- [x] **3.1 In-memory block device.** FatFs's disk layer (`src/hal/diskio.c`) backed by a byte array.
+  *Verify:* `ctest` (`tests/storage`) formats the array with `f_mkfs`, writes files, reads them back byte-identical, and reads the clusters through `clst2sect` + `disk_read`.
+- [x] **3.2 Image builder.** Build a FAT image from a directory tree laid out like the Deluge SD card (`SONGS/`, `SAMPLES/`, …), using FatFs itself: `node build/webluge.js image <folder> <image>`.
+  *Verify:* the CLI builds an image from `reference/<song>/`, `hdiutil attach` on macOS mounts it with the same files and contents (`diff -r`), and `fsck_msdos -n` finds no errors. (`mdir` would need mtools from Homebrew.)
+- [x] **3.3 Song load.** Load a song XML through the firmware's own storage manager, samples included: `node build/webluge.js load <folder or image> SONGS/<song>.XML`.
+  *Verify:* for each reference song, the CLI logs the song name, the number of clips/instruments and the number of audio files loaded; no loading errors and no missing audio files.
+
+  3.2 and 3.3 were verified with six songs from `~/music/Deluge` (see Discoveries), as the reference songs don't exist yet (0.3). Rerun both on the reference songs when they do.
 
 ### Phase 4: Offline render (Node CLI)
 
@@ -128,6 +130,11 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-10-07 | Card images use 32KB clusters and are sized to their contents, so the FAT type follows from the size (FAT12 below 128MB, FAT16 below 2GB). Real cards are FAT32 | The firmware's streaming works in clusters, so the cluster size matches a real card. FAT32 needs at least 65,525 clusters, a 2GB image held in memory. The FAT type is invisible to the firmware: FatFs reads all three, and sample streaming only uses `clst2sect` and `get_fat` |
+| 2026-10-07 | Load songs the way `setupStartupSong` does: set the song path, open `loadSongUI` and call `performLoad`, with only the scheduler's cluster-loading task registered | The same code as picking a song on the device, including the fallback to samples collected in the song's own folder. `performLoad` waits on the scheduler to fetch sample clusters; the rest of `deluge_main`'s tasks are for Phase 4 to settle |
+| 2026-10-07 | Card images live in Emscripten's heap (`HostAllocator`), not the firmware's allocator | The firmware's `operator new` serves only the device's 64MB of SDRAM, which a card image would exhaust and which the firmware needs for samples |
+| 2026-10-07 | Convert host file names to code page 437 when building an image, skip names that can't be converted, and skip hidden files | The firmware sees names in code page 437 (`ffconf.h`), as it would read a real card's long names. Hidden files are host metadata (`.DS_Store`, sync state) |
+| 2026-10-07 | `load` accepts a card folder as well as an image | Building the image in memory is the path the browser will take (6.1), so the CLI exercises it too |
 | 2026-10-07 | Keep the device's memory map in wasm memory: SDRAM at `0x0C000000` and on-chip RAM at `0x20000000`, with Emscripten's own memory starting above them (`-sGLOBAL_BASE`) | The firmware hard-codes these addresses in several places (allocator, `d_string`, `resizeable_array`). Keeping them means one small seam for the linker symbols instead of patching each site. Untouched wasm memory costs nothing, so the gap is free |
 | 2026-10-07 | Boot from our own `src/main.cpp`, following `deluge_main` without its hardware setup | `deluge_main` reads DMA registers in its first lines, and making it runnable would need seams throughout. The boot sequence is short; the runbook compares it with `deluge_main` on each upgrade |
 | 2026-10-07 | Replace hardware headers from `src/include`, which comes first on the include path: wrap with `#include_next` where possible (MTU2), shadow outright only when the original can't compile (argon, `arm_neon_shim.h`) | No fork changes, and a wrapper keeps the original's definitions, so upstream edits still reach us |
@@ -146,6 +153,17 @@ These are expected, and we accept them unless a listening test says otherwise.
 ## Discoveries
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
+
+- **2026-10-07** Phase 3 findings:
+  - Verified with `SONG060` (samples collected into `SONGS/SONG060/`, so loading uses the firmware's fallback to the song's own folder), `Acid`, `Amapiano Fm`, `Bells` (212 samples), `Chops` and `Car Jam`, each with only the files it references. All load with every audio file found, every sample's first cluster in memory and the loading queue empty. Images of 5MB (FAT12) and 518MB (FAT16) mount in macOS identical to their folders.
+  - The firmware's `operator new` (`memory/operators.cpp`) is its own allocator, so host code's standard library allocations (strings, paths, streams) come out of the device's SDRAM too. That's harmless for small, short-lived ones, but a card image doesn't fit (3.1).
+  - wasm doesn't trap on null pointers. When the firmware's allocator fails, `new` returns null, and writes through it land silently in low memory. The first storage test did exactly that with a 64MB `std::vector` and crashed only later, in an unrelated `delete`.
+  - On the device, a missing sample doesn't fail a song load: `Source::loadAllSamples` discards `loadFile`'s error and the sound goes quiet. The CLI finds missing files itself, walking the song as `Song::loadAllSamples` does, and fails if any are missing, because a render without them wouldn't match the device (4.3).
+  - Given a song that isn't on the card, the song browser opens the nearest file instead, so the CLI checks that the song exists first.
+  - Song loading runs the audio engine: `Source::loadAllSamples` and `Song::loadAllSamples` call `AudioEngine::routineWithClusterLoading` every few sounds, as the device does to keep playing while it loads. Phase 4's audio clock must decide what those calls render (4.1).
+  - `ffconf.h` disables `f_mkfs`, so a fork seam lets the host build enable it. The firmware's FatFs is modified to export `clst2sect` and `get_fat_from_fs` for sample streaming.
+  - `deluge.h` declares `int main(void)`, so the CLI's `main` lives in a file that includes no firmware headers.
+  - Nine sample names in `~/music/Deluge` contain characters outside code page 437 (they look like names already mangled by an earlier copy), so images built from it skip them.
 
 - **2026-10-07** Phase 2 findings:
   - The firmware only builds with GCC and newlib. clang and libc++ needed fixes in the fork (2.1):
@@ -193,5 +211,5 @@ Newest first. Note anything that contradicts or changes the plan, and link to th
 
 - **Stem export as reference.** Is stem export bit-identical to normal playback, or does it change the engine's behaviour (e.g. block size, culling)? Check `processing/stem_export` before relying on it for 4.4.
 - **Block size.** Which fixed block size best approximates typical device behaviour? Look at the `numSamples` distribution on the device, using the existing debug logging.
-- **Device settings.** Do any of the settings in the device's SPI flash, or `SETTINGS/` on its SD card, change playback? If so, record them with the reference songs and feed them to the host. The host currently uses the defaults.
+- **Device settings.** Do any of the settings in the device's SPI flash change playback? If so, record them with the reference songs and feed them to the host, which currently uses the defaults. Settings on the card (`CommunityFeatures.XML`, MIDI devices, MIDI follow) already come from the image, so reference songs should include them.
 - **Upstream.** Would they accept the corrected host fixed-point maths, and perhaps a hardware-replacement layer that could make a host build an official target?
