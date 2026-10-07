@@ -6,6 +6,7 @@
 #include "definitions_cxx.hpp"
 #include "gui/ui/load/load_song_ui.h"
 #include "gui/ui/ui.h"
+#include "gui/ui_timer_manager.h"
 #include "hid/display/display.h"
 #include "hid/encoders.h"
 #include "host_display.h"
@@ -26,12 +27,12 @@
 #include "storage/flash_storage.h"
 #include "storage/multi_range/multi_range.h"
 #include "storage/storage_manager.h"
-#include "task_scheduler.h"
 #include "util/functions.h"
 #include "util/pack.h"
 #include <cstdio>
 
 void setupBlankSong();
+void registerTasks();
 
 namespace webluge {
 namespace {
@@ -105,10 +106,8 @@ void boot() {
 	midiFollow.readDefaultsFromFile(storageManager);
 	setupBlankSong();
 
-	// The one scheduler task loading needs: the song loader waits on it to fetch sample clusters. Same schedule as in
-	// deluge_main.
-	addRepeatingTask([]() { audioFileManager.loadAnyEnqueuedClusters(128, false); }, 3, 0.00001, 0.00001, 0.00002,
-	                 "load clusters");
+	uiTimerManager.setTimer(TimerName::GRAPHICS_ROUTINE, 50);
+	registerTasks();
 }
 
 // As setupStartupSong does, so the song loads through the same UI path as on the device.

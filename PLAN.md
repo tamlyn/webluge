@@ -89,10 +89,10 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
 
 ### Phase 4: Offline render (Node CLI)
 
-- [ ] **4.1 Fake audio clock.** Replace the audio driver's output buffer (`getTxBufferStart`/`getTxBufferCurrentPlace`, `src/hal/ssi.c`) with a ring buffer whose read position advances by a fixed block size per tick, and drive the host clock (`src/hal/clock.c`), which feeds the timers, from the same ticks. Run the audio engine without the hardware scheduler.
-  *Verify:* rendering the blank song with the metronome on produces a WAV with clicks at the expected tempo, within ±1 sample per beat.
-- [ ] **4.2 Single synth note.** Trigger one note on a default synth.
-  *Verify:* the output WAV is non-silent, and an FFT confirms the fundamental at the expected frequency within ±1 cent.
+- [x] **4.1 Fake audio clock.** The host clock (`src/hal/clock.c`) is virtual: it moves on only when the firmware's own scheduler has nothing due, 16 frames at a time, and the codec (`src/hal/ssi.c`) plays each frame it passes from the DMA buffer. The scheduler runs the device's own tasks (`registerTasks`), audio routine included, and calls the host through a seam when it's idle.
+  *Verify:* `ctest` (`tests/render`, `metronome`) renders the blank song with the metronome on: the clicks are one beat apart (22050 frames at 120 BPM), within ±1 frame.
+- [x] **4.2 Single synth note.** Trigger one note on a default synth.
+  *Verify:* `ctest` (`note`) renders a C4: it isn't silent, its strongest partial is the fundamental, and the spectral peak is within ±1 cent of 261.626 Hz.
 - [ ] **4.3 Full song render.** `webluge render <image> <song> out.wav` plays the song from the start for its full length.
   *Verify:* each reference song renders without crashing, its output length matches the device recording within one block, and it isn't silent.
 - [ ] **4.4 Match against the device.**
@@ -149,6 +149,8 @@ These are expected, and we accept them unless a listening test says otherwise.
 | 2026-10-07 | Port the whole firmware with a replacement hardware layer, rather than extracting the DSP | The sound depends on the sequencer, params and song model, not just the voice engines |
 | 2026-10-07 | Keep FatFs and back it with an in-memory disk image | Sample streaming reads raw sectors by FAT cluster, bypassing the file API |
 | 2026-10-07 | Offline Node renderer before real-time browser playback | Deterministic output we can null-test against device recordings |
+| 2026-10-07 | Drive the audio engine from the firmware's scheduler on a virtual clock, rather than calling it directly with a fixed block size (4.1) | Stem export, which made the reference recordings, waits on the scheduler with `yield`, so it can only run on the host this way. The engine then also picks its render windows as on the device |
+| 2026-10-07 | The virtual clock moves on 16 frames per idle step | Moving one frame at a time gives one-frame render windows, which the device, taking time to render, never does. 16 frames is the audio routine's target interval in `deluge_main`, and gives windows of 12 and 20 frames |
 
 ## Discoveries
 
@@ -224,6 +226,6 @@ Newest first. Note anything that contradicts or changes the plan, and link to th
 ## Open questions
 
 - **Stem export as reference.** Is stem export bit-identical to normal playback, or does it change the engine's behaviour (e.g. block size, culling)? Check `processing/stem_export` before relying on it for 4.4.
-- **Block size.** Which fixed block size best approximates typical device behaviour? Look at the `numSamples` distribution on the device, using the existing debug logging.
+- **Block size.** The host renders in windows of 12 and 20 frames (4.1). What does the device use? Look at the `numSamples` distribution on the device, using the existing debug logging, and if it differs, model the time the device takes to render.
 - **Device settings.** Do any of the settings in the device's SPI flash change playback? If so, record them with the reference songs and feed them to the host, which currently uses the defaults. Settings on the card (`CommunityFeatures.XML`, MIDI devices, MIDI follow) already come from the image, so reference songs should include them.
 - **Upstream.** Would they accept the corrected host fixed-point maths, and perhaps a hardware-replacement layer that could make a host build an official target?

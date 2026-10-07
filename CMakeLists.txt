@@ -125,3 +125,7 @@ add_executable(storage_test tests/storage/storage_test.cpp)
 target_link_libraries(storage_test PRIVATE firmware)
 # emcmake runs tests under Node.
 add_test(NAME storage COMMAND storage_test)
+add_executable(render_test tests/render/render_test.cpp)
+target_link_libraries(render_test PRIVATE firmware)
+add_test(NAME metronome COMMAND render_test metronome)
+add_test(NAME note COMMAND render_test note)

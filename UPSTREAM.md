@@ -9,7 +9,7 @@ How we keep webluge's changes to the Deluge firmware small and replayable, so th
 | Hardware replacement layer (audio clock, disk, stubs for pads, display, USB, timers) | This repo | Upstream never touches it, so it survives upgrades unchanged unless a driver interface changes |
 | Build (CMake, Emscripten flags, source list) | This repo | Includes `src/deluge` by glob with a short exclusion list, so new upstream files are picked up without edits |
 | Replacement headers (`src/include`) | This repo | First on the include path, so they replace firmware headers of the same name without touching the fork. Prefer wrapping the original with `#include_next` over copying it |
-| Boot sequence (`src/boot.cpp`) | This repo | Follows `deluge_main` without its hardware setup |
+| Boot sequence (`src/boot.cpp`) | This repo | Follows `deluge_main` without its hardware setup, and registers the device's scheduler tasks |
 | Changes to firmware source | Our fork, as a patch series on a per-release branch | Small, reviewable and replayable with `git rebase`/`cherry-pick` |
 
 ## Rules for changing firmware source
@@ -70,3 +70,4 @@ Starting point. Patches on `webluge/1.2.1`:
 - `seam:` `general_memory_allocator.cpp` takes its memory region bounds from `webluge/memory_map.h` instead of linker symbols.
 - `seam:` `UNCACHED_MIRROR_OFFSET` is 0 on the host.
 - `seam:` `ffconf.h` lets the host build enable `f_mkfs`, to format card images.
+- `seam:` The task scheduler calls `webluge_scheduler_idle` when nothing is due, so the host's virtual clock can move on.
