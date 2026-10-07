@@ -1,0 +1,3 @@
+[submodule "DelugeFirmware"]
+	path = DelugeFirmware
+	url = https://github.com/tamlyn/DelugeFirmware.git
