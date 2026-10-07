@@ -57,11 +57,13 @@ Every checkpoint in this phase is verified by `tests/golden/check.sh`, which bui
 
 ### Phase 2: Whole firmware compiles and boots under Emscripten
 
-- [ ] **2.1 Build system.** A CMake project in this repo that compiles `src/deluge` and FatFs with Emscripten, excluding the hardware sources and the ARM-only files in [ARM_AUDIT.md](ARM_AUDIT.md), and adding `src/dsp/neon_fm_kernel.cpp`. Flags: `-msimd128`, NEON translation enabled, `-ffp-contract=off` (never `fast`, see 1.4), no fast-math.
+Build with `mise exec -- emcmake cmake -B build -G Ninja` then `mise exec -- ninja -C build`.
+
+- [x] **2.1 Build system.** A CMake project in this repo that compiles `src/deluge` and FatFs with Emscripten, excluding the hardware sources and the ARM-only files in [ARM_AUDIT.md](ARM_AUDIT.md), and adding `src/dsp/neon_fm_kernel.cpp`. Flags: `-msimd128`, NEON translation enabled, `-ffp-contract=off` (never `fast`, see 1.4), no fast-math.
   *Verify:* `cmake --build` produces a `.wasm` and JS loader with zero unresolved symbols (`-sERROR_ON_UNDEFINED_SYMBOLS=1`).
-- [ ] **2.2 NEON code compiles to wasm SIMD**: the files using NEON intrinsics (`render_wave.h`, `vector_rendering_function.h`, `wave_table.cpp`, `voice.cpp`, `interpolate.h`, `sample_low_level_reader`, `live_pitch_shifter_play_head`, NE10's int32 FFT), plus the argon user `cosine_oscillator.hpp`. Under clang, `src/arm_neon_shim.h` defines only the NEON types, not the intrinsics, so put a replacement that includes `<arm_neon.h>` earlier on the include path.
+- [x] **2.2 NEON code compiles to wasm SIMD**: the files using NEON intrinsics (`render_wave.h`, `vector_rendering_function.h`, `wave_table.cpp`, `voice.cpp`, `interpolate.h`, `sample_low_level_reader`, `live_pitch_shifter_play_head`, NE10's int32 FFT), plus the argon user `cosine_oscillator.hpp`. Under clang, `src/arm_neon_shim.h` defines only the NEON types, not the intrinsics, so put a replacement that includes `<arm_neon.h>` earlier on the include path.
   *Verify:* the 2.1 build succeeds with no scalar rewrites. Any intrinsic Emscripten can't translate gets a hand-written fallback, logged in Discoveries.
-- [ ] **2.3 Stub hardware layer.** No-op or minimal implementations of the following, plus a large heap buffer standing in for the 64MB SDRAM:
+- [x] **2.3 Stub hardware layer** (`src/hal`). No-op or minimal implementations of the following, with the device's SDRAM and on-chip RAM kept at their own addresses in wasm memory:
   - the pad/button controller (PIC) over UART;
   - the OLED and 7-segment display;
   - USB, MIDI and CV;
@@ -69,7 +71,7 @@ Every checkpoint in this phase is verified by `tests/golden/check.sh`, which bui
   - the SD card.
   
   *Verify:* `node build/webluge.js` runs firmware initialisation to the point of setting up a blank song (`setupBlankSong`) and exits cleanly, logging that it got there.
-- [ ] **2.4 32-bit pointer assumptions.** Nothing to fix on wasm32, but note any casts that break the build.
+- [x] **2.4 32-bit pointer assumptions.** Nothing to fix on wasm32, but note any casts that break the build.
   *Verify:* the build has no pointer-truncation warnings, or each remaining one is explained in Discoveries.
 
 ### Phase 3: Storage
@@ -85,7 +87,7 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
 
 ### Phase 4: Offline render (Node CLI)
 
-- [ ] **4.1 Fake audio clock.** Replace the audio driver's output buffer (`getTxBufferStart`/`getTxBufferCurrentPlace`) with a ring buffer whose read position advances by a fixed block size per tick. Run the audio engine without the hardware scheduler.
+- [ ] **4.1 Fake audio clock.** Replace the audio driver's output buffer (`getTxBufferStart`/`getTxBufferCurrentPlace`, `src/hal/ssi.c`) with a ring buffer whose read position advances by a fixed block size per tick, and drive the host clock (`src/hal/clock.c`), which feeds the timers, from the same ticks. Run the audio engine without the hardware scheduler.
   *Verify:* rendering the blank song with the metronome on produces a WAV with clicks at the expected tempo, within ±1 sample per beat.
 - [ ] **4.2 Single synth note.** Trigger one note on a default synth.
   *Verify:* the output WAV is non-silent, and an FFT confirms the fundamental at the expected frequency within ±1 cent.
@@ -126,6 +128,11 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-10-07 | Keep the device's memory map in wasm memory: SDRAM at `0x0C000000` and on-chip RAM at `0x20000000`, with Emscripten's own memory starting above them (`-sGLOBAL_BASE`) | The firmware hard-codes these addresses in several places (allocator, `d_string`, `resizeable_array`). Keeping them means one small seam for the linker symbols instead of patching each site. Untouched wasm memory costs nothing, so the gap is free |
+| 2026-10-07 | Boot from our own `src/main.cpp`, following `deluge_main` without its hardware setup | `deluge_main` reads DMA registers in its first lines, and making it runnable would need seams throughout. The boot sequence is short; the runbook compares it with `deluge_main` on each upgrade |
+| 2026-10-07 | Replace hardware headers from `src/include`, which comes first on the include path: wrap with `#include_next` where possible (MTU2), shadow outright only when the original can't compile (argon, `arm_neon_shim.h`) | No fork changes, and a wrapper keeps the original's definitions, so upstream edits still reach us |
+| 2026-10-07 | The host clock is virtual and moves on each time it's read | Deterministic runs (the firmware seeds its random numbers from a timer), and busy-waits on a timer still finish |
+| 2026-10-07 | Exit with `_Exit`, skipping global destructors | The device never tears down its globals, and they can't be: the memory allocator is destroyed before objects that free memory through it (E339) |
 | 2026-10-07 | Replace the DX7 NEON kernel by providing `neon_fm_kernel` from this repo, rather than patching the firmware | The symbol is a clean seam, so the fork needs no change |
 | 2026-10-07 | Accept QEMU's ARMv7 emulation as the source of golden outputs | Apple silicon has no AArch32, so real ARMv7 silicon would mean extra hardware. QEMU's integer and NEON emulation is well tested, and 4.4's null tests against the device would catch any discrepancy |
 | 2026-10-07 | Pin the firmware to 1.2.1 and update the hardware to match (was 1.2.0) | No references recorded yet, so switching is free. 1.2.1 fixes clicks during sample loading; the host loads instantly and wouldn't reproduce them, so they'd pollute the comparisons |
@@ -139,6 +146,28 @@ These are expected, and we accept them unless a listening test says otherwise.
 ## Discoveries
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
+
+- **2026-10-07** Phase 2 findings:
+  - The firmware only builds with GCC and newlib. clang and libc++ needed fixes in the fork (2.1):
+    - missing includes, which libstdc++ supplied transitively or the DSP library's unity build hid (`filter.cpp` gets `definitions.h` from a neighbouring file);
+    - `int32_t` is `long` on arm-none-eabi but `int` on wasm, which breaks `std::max(u, 0L)`;
+    - `std::array` iterators used as pointers, `strrchr` returning `char*` for a `const char*`, and a misplaced `__restrict__`;
+    - `Language`'s name is a `std::string` built in a `consteval` constructor. "Seven Segment" fits libstdc++'s 15-character small-string buffer but not libc++'s 10.
+  - argon, the NEON wrapper used for the Mutable reverb's LFO, doesn't compile with clang: it binds references to vector lanes. It's only used for a two-lane float vector, so `src/include/argon.hpp` replaces it with a scalar one doing the same operations in the same order (2.2). Nothing else needed a fallback.
+  - The 1.3 audit missed inline asm in `OSLikeStuff/timers_interrupts.h`, because its searches only covered `src/deluge`. The searches now include `OSLikeStuff`.
+  - Firmware code outside the drivers reads hardware registers directly (`scripts/find_register_access.sh` lists them):
+    - the MTU2 timers: `delayMS`/`delayUS` busy-wait on them, `seedRandom` seeds the noise generator from one, and the audio and MIDI-gate code read them for timing;
+    - the ADC in `inputRoutine` (battery voltage);
+    - DMA registers in `deluge_main`, and the OLED's error screen;
+    - the PIC and MIDI UART buffers, written through the uncached memory mirror at `+0x40000000`.
+    
+    The MTU2 registers now live in host memory (2.3). The others don't run yet; `inputRoutine` will matter in Phase 4 if we call it.
+  - Because the device seeds its random numbers from a timer, anything using noise or randomness differs on every boot. Songs that use it can't null-test against a device recording (4.4).
+  - Whether the engine renders in stereo depends on the jack-detect pins (`inputRoutine`): headphones or the right line out. The host reports headphones plugged in.
+  - Settings live in SPI flash, which the host reports as erased, so the firmware uses its defaults. The device's own settings may differ; see Open questions.
+  - The 1.2.1 release still says `VERSION 1.2.0` in its CMakeLists.txt, so the device reports itself as c1.2.0. The host build takes the version from there, so it matches.
+  - wasm-ld only reports undefined symbols in code it keeps, so dead code hides missing hardware functions. Linked with `--no-gc-sections`, the only undefined symbol is NE10's float FFT allocator, which the device's link drops too.
+  - No pointer-truncation warnings (2.4): pointers are 32 bits on both. `-Wshorten-64-to-32` reports 334 sites, but they're deliberate 64-to-32-bit arithmetic, identical on ARM.
 
 - **2026-10-07** Phase 1 findings ([ARM_AUDIT.md](ARM_AUDIT.md) has the full list):
   - The DX7 NEON assembly *is* used on the device, contradicting the survey below: `fm_op_kernel.cpp` defines `HAVE_NEON`, `setEngineMode` defaults to `neon = true`, and `dsp/CMakeLists.txt` globs `*.s`. It computes sine with a float polynomial, so the C++ fallback sounds different. Added 1.4 and ported it; the port matches bit for bit.
@@ -164,4 +193,5 @@ Newest first. Note anything that contradicts or changes the plan, and link to th
 
 - **Stem export as reference.** Is stem export bit-identical to normal playback, or does it change the engine's behaviour (e.g. block size, culling)? Check `processing/stem_export` before relying on it for 4.4.
 - **Block size.** Which fixed block size best approximates typical device behaviour? Look at the `numSamples` distribution on the device, using the existing debug logging.
+- **Device settings.** Do any of the settings in the device's SPI flash, or `SETTINGS/` on its SD card, change playback? If so, record them with the reference songs and feed them to the host. The host currently uses the defaults.
 - **Upstream.** Would they accept the corrected host fixed-point maths, and perhaps a hardware-replacement layer that could make a host build an official target?
