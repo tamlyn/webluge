@@ -37,22 +37,29 @@ Each checkpoint has a verification step that anyone can run. Tick a box only whe
 
 The host fallbacks in `src/deluge/util/fixedpoint.h` don't match the ARM instructions:
 
-- `multiply_32x32_rshift32_rounded` doesn't round;
+- `multiply_32x32_rshift32_rounded`, `multiply_accumulate_…_rounded` and `multiply_subtract_…_rounded` don't round;
 - `signed_saturate` clamps only the upper bound, and to the wrong value;
-- `add_saturation` doesn't saturate.
+- `add_saturation` doesn't saturate;
+- `clz` is undefined for 0, where ARM returns 32.
 
-- [ ] **1.1 Bit-exact host versions** of `smmul`, `smmulr`, `smmlar`, `smmlsr`, `ssat`, `qadd` and `clz`, following the ARM Architecture Reference Manual pseudocode.
+Every checkpoint in this phase is verified by `tests/golden/check.sh`, which builds each harness natively and with Emscripten and compares its output with golden output from ARMv7. `tests/golden/generate.sh` makes the golden output by building the same harness against the ARM code and running it in a Docker `linux/arm/v7` container.
+
+- [x] **1.1 Bit-exact host versions** of `smmul`, `smmulr`, `smmlar`, `smmlsr`, `ssat`, `qadd` and `clz`, following the ARM Architecture Reference Manual pseudocode.
   *Verify:* we run randomised and edge-case vectors (0, ±1, `INT32_MIN`, `INT32_MAX`, saturation boundaries). The host versions must match golden outputs from the real ARM instructions for every vector. Generate the golden outputs once by compiling the `__arm__` code paths for ARMv7 and running them in a Docker `linux/arm/v7` container.
-- [ ] **1.2 Upstream unit tests still pass** with the corrected fallbacks.
+- [x] **1.2 Upstream unit tests still pass** with the corrected fallbacks.
   *Verify:* the firmware's `tests/unit` suite passes.
-- [ ] **1.3 Audit other ARM-only code paths**: anything else guarded by `__arm__`, plus inline asm in `util/functions.h`.
-  *Verify:* we have a list of every `__arm__`/`asm` site in `src/deluge`, each marked as having an exact host equivalent or being irrelevant to audio.
+- [x] **1.3 Audit other ARM-only code paths**: anything else guarded by `__arm__`, plus inline asm in `util/functions.h`.
+  *Verify:* we have a list of every `__arm__`/`asm` site in `src/deluge`, each marked as having an exact host equivalent or being irrelevant to audio. See [ARM_AUDIT.md](ARM_AUDIT.md).
+- [x] **1.4 DX7 NEON kernel.** The device runs the DX7 "modern" engine through `dsp/dx/neon_fm_kernel.s`, which computes sine with a float polynomial, not the lookup table in the C++ fallback. Port it to C++ in this repo.
+  *Verify:* the `dx7_kernel` golden test matches for every block size `FmCore::render` can request, with and without modulation and accumulation, and at extreme gains.
+- [x] **1.5 NEON intrinsics are exact under Emscripten.** Emscripten's `arm_neon.h` is SIMDe; check it against ARMv7 for every integer intrinsic the firmware and NE10 use.
+  *Verify:* the `neon` golden test matches, covering edge-value pairs for the saturating, rounding and halving operations and every valid shift immediate.
 
 ### Phase 2: Whole firmware compiles and boots under Emscripten
 
-- [ ] **2.1 Build system.** A CMake project in this repo that compiles `src/deluge` and FatFs with Emscripten, excluding the hardware sources. Flags: `-msimd128`, NEON translation enabled, `-ffp-contract=off`, no fast-math.
+- [ ] **2.1 Build system.** A CMake project in this repo that compiles `src/deluge` and FatFs with Emscripten, excluding the hardware sources and the ARM-only files in [ARM_AUDIT.md](ARM_AUDIT.md), and adding `src/dsp/neon_fm_kernel.cpp`. Flags: `-msimd128`, NEON translation enabled, `-ffp-contract=off` (never `fast`, see 1.4), no fast-math.
   *Verify:* `cmake --build` produces a `.wasm` and JS loader with zero unresolved symbols (`-sERROR_ON_UNDEFINED_SYMBOLS=1`).
-- [ ] **2.2 NEON code compiles to wasm SIMD**: the five files using NEON intrinsics (`render_wave.h`, `vector_rendering_function.h`, `wave_table.cpp`, `voice.cpp`, `interpolate.h`), plus the argon user `cosine_oscillator.hpp`.
+- [ ] **2.2 NEON code compiles to wasm SIMD**: the files using NEON intrinsics (`render_wave.h`, `vector_rendering_function.h`, `wave_table.cpp`, `voice.cpp`, `interpolate.h`, `sample_low_level_reader`, `live_pitch_shifter_play_head`, NE10's int32 FFT), plus the argon user `cosine_oscillator.hpp`. Under clang, `src/arm_neon_shim.h` defines only the NEON types, not the intrinsics, so put a replacement that includes `<arm_neon.h>` earlier on the include path.
   *Verify:* the 2.1 build succeeds with no scalar rewrites. Any intrinsic Emscripten can't translate gets a hand-written fallback, logged in Discoveries.
 - [ ] **2.3 Stub hardware layer.** No-op or minimal implementations of the following, plus a large heap buffer standing in for the 64MB SDRAM:
   - the pad/button controller (PIC) over UART;
@@ -113,12 +120,14 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 - **Render block size.** On the device it varies with CPU load, and modulation updates once per block. We use a fixed block size. Expected effect: tiny, inaudible.
 - **Voice culling.** An overloaded Deluge drops voices; the host won't, so heavy songs may sound cleaner than on the device. If this matters, we could model the device's CPU cost.
-- **Float maths** (reverbs, compressor, parts of DX7). Maths library functions and denormal handling differ from ARMv7, so the last few bits may differ.
+- **Float maths** (reverbs, compressor, parts of DX7). The device firmware is built with `-funsafe-math-optimizations`, so GCC runs float maths on NEON (flushing denormals to zero) and may reassociate it. That can't be reproduced, and maths library functions differ too, so the last few bits may differ. The DX7 NEON kernel is the exception: it's hand-written assembly, so its float maths is exact (1.4).
 
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-10-07 | Replace the DX7 NEON kernel by providing `neon_fm_kernel` from this repo, rather than patching the firmware | The symbol is a clean seam, so the fork needs no change |
+| 2026-10-07 | Accept QEMU's ARMv7 emulation as the source of golden outputs | Apple silicon has no AArch32, so real ARMv7 silicon would mean extra hardware. QEMU's integer and NEON emulation is well tested, and 4.4's null tests against the device would catch any discrepancy |
 | 2026-10-07 | Pin the firmware to 1.2.1 and update the hardware to match (was 1.2.0) | No references recorded yet, so switching is free. 1.2.1 fixes clicks during sample loading; the host loads instantly and wouldn't reproduce them, so they'd pollute the comparisons |
 | 2026-10-07 | Firmware changes go in a per-release patch series on the fork; everything else stays in this repo (see UPSTREAM.md) | So 1.3.0 and later releases are a rebase, not a restart |
 | 2026-10-07 | Manage project tools with mise (`mise.toml`) | Tamlyn's preference for project dependencies |
@@ -131,11 +140,22 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
 
+- **2026-10-07** Phase 1 findings ([ARM_AUDIT.md](ARM_AUDIT.md) has the full list):
+  - The DX7 NEON assembly *is* used on the device, contradicting the survey below: `fm_op_kernel.cpp` defines `HAVE_NEON`, `setEngineMode` defaults to `neon = true`, and `dsp/CMakeLists.txt` globs `*.s`. It computes sine with a float polynomial, so the C++ fallback sounds different. Added 1.4 and ported it; the port matches bit for bit.
+  - The device build uses `-funsafe-math-optimizations` (`scripts/cmake/CMakeToolchainDeluge.cmake`), which confirms that float paths can't be bit-exact. Updated **Known differences**.
+  - `smmlar`/`smmlsr` round the 64-bit sum rather than the product, so `smmlsr` is not `sum - smmulr(a, b)`: they differ when the product's low word is exactly `0x80000000`.
+  - `swapEndianness32`/`2x16` in `util/functions.h` were unguarded inline asm, so the host build would fail; fixed in the fork.
+  - `gui/l10n/language.h` uses `std::copy` without including `<algorithm>`. Current libc++ (Apple clang, and so Emscripten) doesn't include it transitively, so the unit tests didn't build on macOS. Fixed in the fork.
+  - Under clang, `src/arm_neon_shim.h` defines only the NEON types, not the intrinsics (2.2). Emscripten's `arm_neon.h` is SIMDe, and is exact for every integer intrinsic the firmware uses (1.5).
+  - The golden outputs come from QEMU, not silicon: the container reports a Cortex-A57 on an Apple M4, which has no AArch32.
+  - The 32-bit memory manager tests (`tests/32bit_unit_tests`) only build on Linux with `-m32`, so 1.2 ran `tests/unit` and `tests/spec` only.
+  - Golden tests compile with `-ffp-contract=off`. `-ffp-contract=fast` breaks the DX7 kernel even with `#pragma STDC FP_CONTRACT OFF` or `#pragma clang fp contract(off)`, because the backend fuses regardless.
+
 - **2026-10-07** Docker on this Mac runs `linux/arm/v7` containers (`uname -m` prints `armv7l`), so we can generate the ARM golden vectors for 1.1 there.
 - **2026-10-07** `~/music/Deluge` is a synced copy of the SD card: about 250 songs, kits, synths and samples, and a good source of test songs for 0.3. It has no usable reference recordings: `SAMPLES/RECORD` and `RESAMPLE` are empty, and the only matching audio elsewhere (`Ableton/Projects/Loops/Acid Project/Acid.mp3`) is an Ableton render in a lossy format. Most songs were last saved by official firmware 4.0–4.1, so 3.3 also exercises the community firmware's loading of older song files. `SONGS/SONG060` is self-contained: its samples are collected next to the XML.
 - **2026-10-07** 1.2.1 differs from 1.2.0 in only three source commits: #3266 moves the record point before volume, #3680 fixes clicks during sample cluster loading, and a CMake build fix. The findings below were checked at both versions and hold for both.
 - **2026-10-07** Initial survey of firmware commit `c23bc2fe`:
-  - The DX7 NEON assembly (`neon_fm_kernel.s`) is unused on the device because `HAVE_NEON` is never defined, so the C++ path is the reference.
+  - ~~The DX7 NEON assembly (`neon_fm_kernel.s`) is unused on the device because `HAVE_NEON` is never defined, so the C++ path is the reference.~~ Wrong; see the Phase 1 findings above.
   - The firmware already has `IN_UNIT_TESTS` hooks in the memory allocator, which we can reuse for 2.3.
   - The audio engine works out its render window from the position of the audio hardware's output buffer (`getTxBufferCurrentPlace`), and its voice culling depends on that window size.
   - Hardware drivers live in `src/deluge/drivers` as well as `src/RZA1`.

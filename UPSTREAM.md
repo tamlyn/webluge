@@ -43,7 +43,7 @@ To move to a new release:
 2. Run `git range-diff` between the old and new series, and record anything that needed rework in the release log below.
 3. Point the submodule at the new branch.
 4. Build. Undefined symbols (`-sERROR_ON_UNDEFINED_SYMBOLS=1`) show where upstream changed an interface our hardware layer implements.
-5. Run the fixed-point golden tests and the unit tests.
+5. Rerun the searches in [ARM_AUDIT.md](ARM_AUDIT.md) and update it. If a harness in `tests/golden` changed, or a new ARM-only site needs one, regenerate with `tests/golden/generate.sh`. Then run `tests/golden/check.sh` and the firmware's unit tests.
 6. Update the Deluge to the new release, record the test songs into `reference/<new>/`, then run the render comparisons (PLAN.md 4.4).
 7. Re-check every item in PLAN.md's Discoveries that names a file or function, and update this log.
 
@@ -53,4 +53,8 @@ Record what each upgrade needed, newest first: conflicts, interface changes, new
 
 ### 1.2.1 (`release_1_2_1`, `c23bc2fe`)
 
-Starting point. No patches yet, so the submodule points at the release tag itself. Create `webluge/1.2.1` with the first firmware change.
+Starting point. Patches on `webluge/1.2.1`, all `upstreamable:`:
+
+- Host fixed-point fallbacks in `util/fixedpoint.h` match the ARM instructions.
+- `swapEndianness32`/`2x16` in `util/functions.h` get a portable fallback.
+- `gui/l10n/language.h` includes `<algorithm>` for `std::copy`.
