@@ -28,9 +28,6 @@ void exportClipStems() {
 	// A device's card always has one. Stem export makes only the folders inside it, and without it never stops looking
 	// for a folder name it can create.
 	f_mkdir("SAMPLES");
-	// As the reference recordings were made: they end at the clip's end, not after the 12 seconds of silence this
-	// would wait for.
-	stemExport.exportToSilence = false;
 	stemExport.startStemExportProcess(StemExportType::CLIP);
 }
 

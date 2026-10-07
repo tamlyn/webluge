@@ -102,10 +102,12 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
   
   Record the numbers in Discoveries. If a song falls short, add a checkpoint to find the cause before moving on.
 
-  Short so far (see Discoveries), so 4.5–4.7 come first.
-- [ ] **4.5 Null-testable synth references.** Re-record `Reference Synth Sub` and `Reference Synth Rsb` with every oscillator's retrigger phase set (e.g. 0°), and anything else random (LFOs set to random, noise, unison spread) off.
-  *Verify:* the README lists the songs' random sources as none; 4.4 reruns on them.
-- [ ] **4.6 Kit residual.** Find why `Reference Kit 808`'s clips with several drums null only to −38 dB when the kick alone reaches −75 dB. Start with the kit's flanger: its residual moves with render timing.
+  Short so far (see Discoveries), so 4.5–4.8 come first.
+- [ ] **4.5 Null-testable references.** Re-record the references on 1.2.1 with nothing random: every oscillator's retrigger phase set (e.g. 0°), and no noise, random LFOs or unison spread. The synths are done; left: re-export `Reference Kit 808` on 1.2.1, and take the noise out of `Reference Synth Sub`'s clip 5.
+  *Verify:* the README lists the songs' random sources as none, and every song as recorded on 1.2.1; 4.4 reruns on them.
+- [ ] **4.6 Residual that depends on render timing.** Find why the synths' plain clips null to only −38 to −58 dB although 67–95% of their samples are bit-identical, and why `Reference Kit 808`'s clips with several drums reach only −38 dB when the kick alone reaches −75 dB. In both, the error comes in short runs (in the synths, the 30 samples after each edge of a square wave), and the nulls move when only the export's timing changes, so look for state that runs freely with time, such as LFOs or the kit's flanger.
+  *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
+- [ ] **4.8 Filter automation.** Find why clips automating the low-pass filter diverge as they go on: −32 dB for `Reference Synth Sub`'s clip 6 (cutoff), −6 dB for `Rsb`'s clip 2 (cutoff and resonance).
   *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
 - [ ] **4.7 Annoying Song level.** Find why the host's render of `test-songs/Annoying Song` runs 0.6–2.1 dB quieter than the device's recording, section by section.
   *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
@@ -132,7 +134,7 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 - **Render block size.** On the device it varies with CPU load, and modulation updates once per block. The host's comes from the scheduler on the virtual clock (windows of 12 and 20 frames during playback). Stem export's offline rendering uses fixed 32-frame windows on both. Expected effect: tiny, inaudible.
 - **Randomness.** The device seeds its random numbers from a timer at boot, so oscillators without a retrigger phase, random LFOs and noise start differently on every boot, on the device as on the host.
-- **Stem export length.** Stem export stops a stem after the render burst that crosses the clip's end, so how far it runs past depends on CPU speed: up to about 1500 frames different from the device.
+- **Stem export length.** Stem export stops a stem after a render burst, so how far it runs past its end depends on CPU speed: up to about 800 frames different from the device with export to silence on, 1500 with it off.
 - **Voice culling.** An overloaded Deluge drops voices; the host won't, so heavy songs may sound cleaner than on the device. If this matters, we could model the device's CPU cost.
 - **Float maths** (reverbs, compressor, parts of DX7). The device firmware is built with `-funsafe-math-optimizations`, so GCC runs float maths on NEON (flushing denormals to zero) and may reassociate it. That can't be reproduced, and maths library functions differ too, so the last few bits may differ. The DX7 NEON kernel is the exception: it's hand-written assembly, so its float maths is exact (1.4).
 
@@ -170,10 +172,12 @@ Newest first. Note anything that contradicts or changes the plan, and link to th
 
 - **2026-10-07** Phase 4 findings:
   - Stem export (`processing/stem_export`), with its defaults, renders offline while it runs, in fixed 32-frame windows rather than at the codec's pace. It records the mix before song FX, and converts the file to mono afterwards (`SampleRecorder::alterFile`). Fixed windows make it a better reference than resampling, which renders whatever the scheduler asks for.
-  - The device's stems end 2000–3000 frames after the clip, not 12 seconds after it goes quiet, so "export to silence" was off for the reference recordings. The host export turns it off too.
+  - The first stems ended 2000–3000 frames after the clip, not 12 seconds after it went quiet, so "export to silence" was off for them. The re-recorded synths used the defaults, export to silence on, and so does `webluge export`.
   - Null tests against the reference stems (4.4):
     - `Reference Kit 808`: −75 dB for the kick-only clip, −47 dB with two drums, −38 to −44 dB with three or four. The error repeats exactly every beat, so it's systematic, not random. It also moves when the render's timing does (−41.7 to −44.0 dB for one clip when the cost per frame went from 10 to 14 cycles), which suggests something free-running, such as the kit's flanger LFO (4.6).
-    - `Reference Synth Sub` and `Rsb`: about 0 dB, no null at all. Every oscillator has `retrigPhase="-1"`, so each note starts at a random phase (`Voice::randomizeOscPhases`, from `getNoise()`), and the device's random state is unknowable. The envelopes and peaks match (peaks within 0.3 dB), but the waveforms can't cancel (4.5).
+    - `Reference Synth Sub` and `Rsb`, first recording: about 0 dB, no null at all. Every oscillator had `retrigPhase="-1"`, so each note starts at a random phase (`Voice::randomizeOscPhases`, from `getNoise()`), and the device's random state is unknowable. The envelopes and peaks matched (peaks within 0.3 dB), but the waveforms couldn't cancel (4.5).
+    - The same synths re-recorded on 1.2.1 with retrigger phase 0°: plain clips −38 to −58 dB, with 67–95% of samples bit-identical and no gain difference (best-fit gain within 0.001 dB) (4.6). Clips automating the filter: −32 dB (Sub clip 6) and −6 dB (Rsb clip 2), with the error growing through the clip (4.8). Sub clip 5 automates noise volume, so it can't null: −5 dB.
+  - The first references were recorded on 1.2.0, not 1.2.1: the device was updated before the re-recordings, whose songs say `firmwareVersion="c1.2.1"`. So release builds report 1.2.1 even though the tag's CMakeLists.txt says 1.2.0.
   - Whole songs against the device's recordings, by loudness envelope in 10 ms steps:
     - `C.Blade Runner` (arranger, 230 seconds): correlation 0.999, median level difference 0.0 dB.
     - `Annoying Song` (arranger, 151 seconds): the timing lines up throughout, but the host is 0.6–2.1 dB quieter depending on the section (4.7).
@@ -225,7 +229,7 @@ Newest first. Note anything that contradicts or changes the plan, and link to th
   - Because the device seeds its random numbers from a timer, anything using noise or randomness differs on every boot. Songs that use it can't null-test against a device recording (4.4).
   - Whether the engine renders in stereo depends on the jack-detect pins (`inputRoutine`): headphones or the right line out. The host reports headphones plugged in.
   - Settings live in SPI flash, which the host reports as erased, so the firmware uses its defaults. The device's own settings may differ; see Open questions.
-  - The 1.2.1 release still says `VERSION 1.2.0` in its CMakeLists.txt, so the device reports itself as c1.2.0. The host build takes the version from there, so it matches.
+  - ~~The 1.2.1 release still says `VERSION 1.2.0` in its CMakeLists.txt, so the device reports itself as c1.2.0. The host build takes the version from there, so it matches.~~ Wrong for the release build: the device on 1.2.1 writes `c1.2.1` (Phase 4 findings). The host now takes its version from the release tag.
   - wasm-ld only reports undefined symbols in code it keeps, so dead code hides missing hardware functions. Linked with `--no-gc-sections`, the only undefined symbol is NE10's float FFT allocator, which the device's link drops too.
   - No pointer-truncation warnings (2.4): pointers are 32 bits on both. `-Wshorten-64-to-32` reports 334 sites, but they're deliberate 64-to-32-bit arithmetic, identical on ARM.
 

@@ -2,9 +2,18 @@ cmake_minimum_required(VERSION 3.23)
 
 set(FIRMWARE ${CMAKE_CURRENT_LIST_DIR}/DelugeFirmware)
 
-# Take the version from the firmware so that saved songs and settings carry the same version as the device's.
-file(STRINGS ${FIRMWARE}/CMakeLists.txt firmware_project REGEX "^[ \t]*VERSION [0-9.]+")
-string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" firmware_version "${firmware_project}")
+# Take the version from the firmware's release tag so that saved songs and settings carry the same version as the
+# device's. Its CMakeLists.txt can lag behind: 1.2.1's still says 1.2.0, but the release build reports 1.2.1.
+execute_process(
+	COMMAND git describe --tags --abbrev=0 --match release_*
+	WORKING_DIRECTORY ${FIRMWARE}
+	OUTPUT_VARIABLE firmware_tag
+	OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+string(REGEX REPLACE "^release_([0-9]+)_([0-9]+)_([0-9]+)$" "\\1.\\2.\\3" firmware_version "${firmware_tag}")
+if(NOT firmware_version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+	message(FATAL_ERROR "No release tag in the firmware's history (found '${firmware_tag}')")
+endif()
 
 project(webluge VERSION ${firmware_version} LANGUAGES C CXX)
 

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <runtimeFeatureSettings
-	firmwareVersion="c1.2.0"
+	firmwareVersion="c1.2.1"
 	earliestCompatibleFirmware="4.1.3"
-	startupSong="SONGS/Ddddddddddddu 2.XML">
+	startupSong="SONGS/.XML">
 	<setting name="drumRandomizer" value="1"></setting>
 	<setting name="quantize" value="1"></setting>
 	<setting name="fineTempoKnob" value="1"></setting>
