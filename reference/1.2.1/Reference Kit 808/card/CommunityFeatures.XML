@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<runtimeFeatureSettings
+	firmwareVersion="c1.2.0"
+	earliestCompatibleFirmware="4.1.3"
+	startupSong="SONGS/Ddddddddddddu 2.XML">
+	<setting name="drumRandomizer" value="1"></setting>
+	<setting name="quantize" value="1"></setting>
+	<setting name="fineTempoKnob" value="1"></setting>
+	<setting name="modDepthDecimals" value="1"></setting>
+	<setting name="catchNotes" value="1"></setting>
+	<setting name="deleteUnusedKitRows" value="1"></setting>
+	<setting name="altGoldenKnobDelayParams" value="1"></setting>
+	<setting name="quantizedStutterRate" value="1"></setting>
+	<setting name="devSysexAllowed" value="0"></setting>
+	<setting name="syncScalingAction" value="0"></setting>
+	<setting name="highlightIncomingNotes" value="1"></setting>
+	<setting name="displayNornsLayout" value="0"></setting>
+	<setting name="stickyShift" value="0"></setting>
+	<setting name="lightShift" value="0"></setting>
+	<setting name="enableGrainFX" value="1"></setting>
+	<setting name="EnableDX7Engine" value="1"></setting>
+	<setting name="emulatedDisplay" value="0"></setting>
+	<setting name="enableKeyboardViewSidebarMenuExit" value="0"></setting>
+	<setting name="enableLaunchEventPlayhead" value="1"></setting>
+	<setting name="displayChordKeyboard" value="1"></setting>
+	<setting name="alternativePlaybackStartBehaviour" value="0"></setting>
+	<setting name="accessibilityShortcuts" value="0"></setting>
+	<setting name="enableGridViewLoopPads" value="0"></setting>
+</runtimeFeatureSettings>

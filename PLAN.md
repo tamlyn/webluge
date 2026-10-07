@@ -31,7 +31,7 @@ Each checkpoint has a verification step that anyone can run. Tick a box only whe
   - sample-based kit with timestretch;
   - FM (DX7), reverb, compressor and sidechain, as the float-heavy case.
   
-  *Verify:* `reference/1.2.1/<song>/` contains the song XML, the samples and the device WAVs, and its README records the firmware version and export settings.
+  *Verify:* `reference/1.2.1/<song>/` contains the song XML, the samples and the device WAVs, and `reference/1.2.1/README.md` records the firmware version and export settings.
 
 ### Phase 1: Exact fixed-point maths
 
@@ -81,11 +81,11 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
 - [x] **3.1 In-memory block device.** FatFs's disk layer (`src/hal/diskio.c`) backed by a byte array.
   *Verify:* `ctest` (`tests/storage`) formats the array with `f_mkfs`, writes files, reads them back byte-identical, and reads the clusters through `clst2sect` + `disk_read`.
 - [x] **3.2 Image builder.** Build a FAT image from a directory tree laid out like the Deluge SD card (`SONGS/`, `SAMPLES/`, …), using FatFs itself: `node build/webluge.js image <folder> <image>`.
-  *Verify:* the CLI builds an image from `reference/<song>/`, `hdiutil attach` on macOS mounts it with the same files and contents (`diff -r`), and `fsck_msdos -n` finds no errors. (`mdir` would need mtools from Homebrew.)
+  *Verify:* the CLI builds an image from `reference/1.2.1/<song>/card/`, `hdiutil attach` on macOS mounts it with the same files and contents (`diff -r`), and `fsck_msdos -n` finds no errors. (`mdir` would need mtools from Homebrew.)
 - [x] **3.3 Song load.** Load a song XML through the firmware's own storage manager, samples included: `node build/webluge.js load <folder or image> SONGS/<song>.XML`.
   *Verify:* for each reference song, the CLI logs the song name, the number of clips/instruments and the number of audio files loaded; no loading errors and no missing audio files.
 
-  3.2 and 3.3 were verified with six songs from `~/music/Deluge` (see Discoveries), as the reference songs don't exist yet (0.3). Rerun both on the reference songs when they do.
+  3.2 and 3.3 were first verified with six songs from `~/music/Deluge` (see Discoveries), then rerun on the reference songs in `reference/1.2.1` and the songs in `test-songs/`.
 
 ### Phase 4: Offline render (Node CLI)
 
@@ -153,6 +153,20 @@ These are expected, and we accept them unless a listening test says otherwise.
 ## Discoveries
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
+
+- **2026-10-07** Reference songs (0.3):
+  - `reference/1.2.1` has three purpose-made songs with stem exports: two subtractive synths and an 808 kit. Neither 0.3's timestretch case nor its FM/reverb case is covered yet: no song has timestretch, FM, the DX7 engine or reverb.
+  - Stem exports are one mono WAV per clip, so 4.4 must render clips one at a time, soloed, to compare against them.
+  - Four bigger songs from the same card are kept out of the repo, in `test-songs/` (gitignored), for manual testing. Two are in arranger mode, and one has FM sounds, audio clips and a 293MB Steinway multisample. Some have device recordings, but these are resample or whole-song recordings, not stem exports.
+  - All seven load with nothing missing (3.3), and their images pass 3.2's checks. Each opens in the view it was saved in: arranger for the two arranger songs.
+  - Leak check:
+    - Loading all seven in one boot, four times over, leaves nothing behind in any of the firmware allocator's regions.
+    - The one exception is `Song::setSongFullPath`, which leaks its `new[]` buffer (about 85 bytes). On the device only `setupStartupSong` calls it, once, but `webluge::loadSong` calls it for every song. Upstream has since fixed it with a stack array, so it'll go when we upgrade.
+    - The check hooked `MemoryRegion::alloc`/`dealloc` temporarily. Linking without wasm-opt (`-O0`) and with `--profiling-funcs` gives usable stacks; otherwise binaryen inlines across files and the stacks stop at `main`.
+  - Memory safety:
+    - ASan isn't available: Emscripten's ASan doesn't support a custom `GLOBAL_BASE`.
+    - `-sSAFE_HEAP=2 -sASSERTIONS=1` runs the storage test and all seven loads clean. `SAFE_HEAP=1` flags the firmware's deliberate unaligned accesses. `SAFE_HEAP` only traps address 0 itself, not null plus an offset.
+  - Arranger playback has to wait for phase 4; render the arranger songs then too.
 
 - **2026-10-07** Phase 3 findings:
   - Verified with `SONG060` (samples collected into `SONGS/SONG060/`, so loading uses the firmware's fallback to the song's own folder), `Acid`, `Amapiano Fm`, `Bells` (212 samples), `Chops` and `Car Jam`, each with only the files it references. All load with every audio file found, every sample's first cluster in memory and the loading queue empty. Images of 5MB (FAT12) and 518MB (FAT16) mount in macOS identical to their folders.

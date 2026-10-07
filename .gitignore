@@ -1,1 +1,4 @@
 build/
+.DS_Store
+# Songs for manual testing, too big for the repo
+/test-songs/
