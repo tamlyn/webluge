@@ -89,18 +89,26 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
 
 ### Phase 4: Offline render (Node CLI)
 
-- [x] **4.1 Fake audio clock.** The host clock (`src/hal/clock.c`) is virtual: it moves on only when the firmware's own scheduler has nothing due, 16 frames at a time, and the codec (`src/hal/ssi.c`) plays each frame it passes from the DMA buffer. The scheduler runs the device's own tasks (`registerTasks`), audio routine included, and calls the host through a seam when it's idle.
+- [x] **4.1 Fake audio clock.** The host clock (`src/hal/clock.cpp`) is virtual: it moves on only when the firmware's own scheduler has nothing due, 16 frames at a time, and the codec (`src/hal/ssi.c`) plays each frame it passes from the DMA buffer. The scheduler runs the device's own tasks (`registerTasks`), audio routine included, and calls the host through a seam when it's idle.
   *Verify:* `ctest` (`tests/render`, `metronome`) renders the blank song with the metronome on: the clicks are one beat apart (22050 frames at 120 BPM), within ±1 frame.
 - [x] **4.2 Single synth note.** Trigger one note on a default synth.
   *Verify:* `ctest` (`note`) renders a C4: it isn't silent, its strongest partial is the fundamental, and the spectral peak is within ±1 cent of 261.626 Hz.
-- [ ] **4.3 Full song render.** `webluge render <image> <song> out.wav` plays the song from the start for its full length.
-  *Verify:* each reference song renders without crashing, its output length matches the device recording within one block, and it isn't silent.
+- [x] **4.3 Full song render.** `webluge render <card> <song> out.wav <seconds>` presses play and records what the codec plays. `webluge export <card> <song> <folder>` runs the firmware's own stem export, a stem per clip, and copies the WAVs out of the card.
+  *Verify:* each reference song exports without crashing, one stem per device stem, none silent. Lengths differ from the device's by up to 1500 frames, not "within one block": stem export renders offline for as long as the CPU takes, so its overshoot past the clip's end depends on CPU speed (see Discoveries). `test-songs/` render whole: `C.Blade Runner` and `Annoying Song` in arranger mode.
 - [ ] **4.4 Match against the device.**
-  *Verify:* align each render with its device stem export (cross-correlation), then null-test:
+  *Verify:* `mise exec -- uv run --with numpy scripts/null_test.py reference/1.2.1/<song>/device <export folder>/<song>/CLIPS` aligns each render with its device stem export (cross-correlation), then null-tests:
   - integer-only song: residual RMS at least 60 dB below the signal (target: bit-identical apart from block-size effects);
   - float-heavy songs: residual at least 40 dB below, plus a blind A/B listening check by Tamlyn.
   
   Record the numbers in Discoveries. If a song falls short, add a checkpoint to find the cause before moving on.
+
+  Short so far (see Discoveries), so 4.5–4.7 come first.
+- [ ] **4.5 Null-testable synth references.** Re-record `Reference Synth Sub` and `Reference Synth Rsb` with every oscillator's retrigger phase set (e.g. 0°), and anything else random (LFOs set to random, noise, unison spread) off.
+  *Verify:* the README lists the songs' random sources as none; 4.4 reruns on them.
+- [ ] **4.6 Kit residual.** Find why `Reference Kit 808`'s clips with several drums null only to −38 dB when the kick alone reaches −75 dB. Start with the kit's flanger: its residual moves with render timing.
+  *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
+- [ ] **4.7 Annoying Song level.** Find why the host's render of `test-songs/Annoying Song` runs 0.6–2.1 dB quieter than the device's recording, section by section.
+  *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
 
 ### Phase 5: Real-time playback in the browser
 
@@ -122,7 +130,9 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
 
 These are expected, and we accept them unless a listening test says otherwise.
 
-- **Render block size.** On the device it varies with CPU load, and modulation updates once per block. We use a fixed block size. Expected effect: tiny, inaudible.
+- **Render block size.** On the device it varies with CPU load, and modulation updates once per block. The host's comes from the scheduler on the virtual clock (windows of 12 and 20 frames during playback). Stem export's offline rendering uses fixed 32-frame windows on both. Expected effect: tiny, inaudible.
+- **Randomness.** The device seeds its random numbers from a timer at boot, so oscillators without a retrigger phase, random LFOs and noise start differently on every boot, on the device as on the host.
+- **Stem export length.** Stem export stops a stem after the render burst that crosses the clip's end, so how far it runs past depends on CPU speed: up to about 1500 frames different from the device.
 - **Voice culling.** An overloaded Deluge drops voices; the host won't, so heavy songs may sound cleaner than on the device. If this matters, we could model the device's CPU cost.
 - **Float maths** (reverbs, compressor, parts of DX7). The device firmware is built with `-funsafe-math-optimizations`, so GCC runs float maths on NEON (flushing denormals to zero) and may reassociate it. That can't be reproduced, and maths library functions differ too, so the last few bits may differ. The DX7 NEON kernel is the exception: it's hand-written assembly, so its float maths is exact (1.4).
 
@@ -150,11 +160,27 @@ These are expected, and we accept them unless a listening test says otherwise.
 | 2026-10-07 | Keep FatFs and back it with an in-memory disk image | Sample streaming reads raw sectors by FAT cluster, bypassing the file API |
 | 2026-10-07 | Offline Node renderer before real-time browser playback | Deterministic output we can null-test against device recordings |
 | 2026-10-07 | Drive the audio engine from the firmware's scheduler on a virtual clock, rather than calling it directly with a fixed block size (4.1) | Stem export, which made the reference recordings, waits on the scheduler with `yield`, so it can only run on the host this way. The engine then also picks its render windows as on the device |
+| 2026-10-07 | Compare against the device's stem exports by running the firmware's own stem export on the host (4.3) | It reproduces the device's procedure (solo, offline render, mono conversion, file naming) rather than imitating it. A plain `render` would have to reimplement all that |
+| 2026-10-07 | Rendering costs 14 P0 cycles a frame on the virtual clock | Stem export renders offline for a fixed time per call, so without a cost the host renders 17.5 seconds per call and overshoots each clip by that much. 14 cycles puts its overshoot near the device's for the reference songs (host 2100–3600 frames, device 2100–3000) |
 | 2026-10-07 | The virtual clock moves on 16 frames per idle step | Moving one frame at a time gives one-frame render windows, which the device, taking time to render, never does. 16 frames is the audio routine's target interval in `deluge_main`, and gives windows of 12 and 20 frames |
 
 ## Discoveries
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
+
+- **2026-10-07** Phase 4 findings:
+  - Stem export (`processing/stem_export`), with its defaults, renders offline while it runs, in fixed 32-frame windows rather than at the codec's pace. It records the mix before song FX, and converts the file to mono afterwards (`SampleRecorder::alterFile`). Fixed windows make it a better reference than resampling, which renders whatever the scheduler asks for.
+  - The device's stems end 2000–3000 frames after the clip, not 12 seconds after it goes quiet, so "export to silence" was off for the reference recordings. The host export turns it off too.
+  - Null tests against the reference stems (4.4):
+    - `Reference Kit 808`: −75 dB for the kick-only clip, −47 dB with two drums, −38 to −44 dB with three or four. The error repeats exactly every beat, so it's systematic, not random. It also moves when the render's timing does (−41.7 to −44.0 dB for one clip when the cost per frame went from 10 to 14 cycles), which suggests something free-running, such as the kit's flanger LFO (4.6).
+    - `Reference Synth Sub` and `Rsb`: about 0 dB, no null at all. Every oscillator has `retrigPhase="-1"`, so each note starts at a random phase (`Voice::randomizeOscPhases`, from `getNoise()`), and the device's random state is unknowable. The envelopes and peaks match (peaks within 0.3 dB), but the waveforms can't cancel (4.5).
+  - Whole songs against the device's recordings, by loudness envelope in 10 ms steps:
+    - `C.Blade Runner` (arranger, 230 seconds): correlation 0.999, median level difference 0.0 dB.
+    - `Annoying Song` (arranger, 151 seconds): the timing lines up throughout, but the host is 0.6–2.1 dB quieter depending on the section (4.7).
+  - On the device, integer division by zero returns a value: the Cortex-A9 has no divide instruction, and libgcc's division routines don't trap. On wasm it traps. `Sample::fillPercCache` divides by zero in digital silence, which crashed `Annoying Song`'s timestretched audio clips. Fixed in the fork, keeping the device's result; see ARM_AUDIT.md.
+  - Stem export loops forever if the card has no `SAMPLES` folder: it makes only the folders inside it, and its search for an unused folder name never gives up. The host makes `SAMPLES` first.
+  - Some firmware loops keep audio running without yielding to the scheduler, e.g. `alterFile` calling `routineWithClusterLoading`. On the virtual clock only clock reads move time on there, so a long one passes thousands of virtual seconds and wraps `audioSampleTimer`. That's harmless, but times printed around them look odd.
+  - Rendering is fast: 30 seconds of `C.Blade Runner` in 0.3 seconds, and of `Annoying Song` in 0.8.
 
 - **2026-10-07** Reference songs (0.3):
   - `reference/1.2.1` has three purpose-made songs with stem exports: two subtractive synths and an 808 kit. Neither 0.3's timestretch case nor its FM/reverb case is covered yet: no song has timestretch, FM, the DX7 engine or reverb.
@@ -225,7 +251,6 @@ Newest first. Note anything that contradicts or changes the plan, and link to th
 
 ## Open questions
 
-- **Stem export as reference.** Is stem export bit-identical to normal playback, or does it change the engine's behaviour (e.g. block size, culling)? Check `processing/stem_export` before relying on it for 4.4.
 - **Block size.** The host renders in windows of 12 and 20 frames (4.1). What does the device use? Look at the `numSamples` distribution on the device, using the existing debug logging, and if it differs, model the time the device takes to render.
 - **Device settings.** Do any of the settings in the device's SPI flash change playback? If so, record them with the reference songs and feed them to the host, which currently uses the defaults. Settings on the card (`CommunityFeatures.XML`, MIDI devices, MIDI follow) already come from the image, so reference songs should include them.
 - **Upstream.** Would they accept the corrected host fixed-point maths, and perhaps a hardware-replacement layer that could make a host build an official target?

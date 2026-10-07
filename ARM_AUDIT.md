@@ -35,6 +35,14 @@ grep -rhoE '\bv[a-z0-9]+(_lane|_n|_high|_low)?_[su](8|16|32|64)\b' deluge NE10/m
 | (none; newlib) | arm-none-eabi toolchain | `int32_t` is `long`, not `int` | On wasm it's `int`. Same size and range, so arithmetic matches; only overload and template deduction differ, which shows up as compile errors |
 | `-mcpu=cortex-a9 -mfpu=neon` | toolchain file | VFPv3 has no fused multiply-add, so the device never fuses | Host must build with `-ffp-contract=off`; `-ffp-contract=fast` fuses even where a pragma forbids it |
 
+## Runtime behaviour
+
+Behaviour of the device's CPU and runtime libraries that no search finds, because it's in ordinary C++.
+
+| Behaviour | Device | Host |
+|---|---|---|
+| Integer division by zero | The Cortex-A9 has no divide instruction, so GCC calls libgcc's division routines. Dividing by zero returns a value instead of trapping: 0 for 0/0, otherwise all ones for unsigned 64-bit division (`__aeabi_uldivmod`) and the saturated value for signed | wasm's `div` traps. Each site that can divide by zero is fixed in the fork to give the device's result as it turns up: so far `Sample::fillPercCache` (4.3) |
+
 ## Hardware registers outside the drivers
 
 Not ARM-specific, but the same problem: firmware code outside `src/deluge/drivers` that reads or writes the RZ/A1's peripheral registers directly. On the host those addresses are outside wasm memory, so the access traps. `scripts/find_register_access.sh` lists the functions in the built wasm that do this; rerun it after each upgrade.

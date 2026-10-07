@@ -19,8 +19,6 @@ namespace {
 // size shapes its loading.
 constexpr uint32_t kClusterSize = 32768;
 constexpr uint32_t kDirectoryEntrySize = 32;
-// Room for files the firmware writes, such as the startup song's crash canary.
-constexpr uint32_t kFreeClusters = 64;
 // wasm32 memory tops out at 4GB, part of which the firmware's own memory map takes.
 constexpr uint64_t kMaxImageBytes = 2ull << 30;
 
@@ -96,9 +94,9 @@ uint64_t clustersFor(uint64_t bytes) {
 	return (bytes + kClusterSize - 1) / kClusterSize;
 }
 
-// An upper bound on the volume size, in sectors, that holds the entries.
-uint64_t sectorsFor(const std::vector<Entry>& entries) {
-	uint64_t clusters = kFreeClusters;
+// An upper bound on the volume size, in sectors, that holds the entries and leaves the free space.
+uint64_t sectorsFor(const std::vector<Entry>& entries, uint64_t freeBytes) {
+	uint64_t clusters = clustersFor(freeBytes);
 	std::map<std::string, uint64_t> folderEntries{{"", 0}};
 	for (const Entry& entry : entries) {
 		size_t slash = entry.cardPath.rfind('/');
@@ -121,6 +119,29 @@ uint64_t sectorsFor(const std::vector<Entry>& entries) {
 	uint64_t fatSectors = 2 * ((clusters + 2) * 4 + WEBLUGE_SECTOR_SIZE - 1) / WEBLUGE_SECTOR_SIZE;
 	uint64_t rootSectors = 512 * kDirectoryEntrySize / WEBLUGE_SECTOR_SIZE;
 	return reservedSectors + fatSectors + rootSectors + clusters * sectorsPerCluster;
+}
+
+void appendUtf8(std::string& utf8, DWORD codePoint) {
+	if (codePoint < 0x80) {
+		utf8 += static_cast<char>(codePoint);
+	}
+	else if (codePoint < 0x800) {
+		utf8 += static_cast<char>(0xC0 | codePoint >> 6);
+		utf8 += static_cast<char>(0x80 | (codePoint & 0x3F));
+	}
+	else {
+		utf8 += static_cast<char>(0xE0 | codePoint >> 12);
+		utf8 += static_cast<char>(0x80 | (codePoint >> 6 & 0x3F));
+		utf8 += static_cast<char>(0x80 | (codePoint & 0x3F));
+	}
+}
+
+std::string toHostName(const char* cardName) {
+	std::string name;
+	for (const char* c = cardName; *c; c++) {
+		appendUtf8(name, ff_oem2uni(static_cast<uint8_t>(*c), FF_CODE_PAGE));
+	}
+	return name;
 }
 
 std::string describe(const Entry& entry, FRESULT result) {
@@ -199,15 +220,74 @@ std::expected<void, std::string> fill(const std::vector<Entry>& entries) {
 	return {};
 }
 
+std::string describe(const std::string& cardPath, FRESULT result) {
+	return cardPath + ": FatFs error " + std::to_string(result);
+}
+
+std::expected<void, std::string> copyFileFromCard(const std::string& cardPath, const fs::path& hostPath,
+                                                  HostVector<char>& buffer) {
+	FIL file;
+	FRESULT result = f_open(&file, cardPath.c_str(), FA_READ);
+	if (result != FR_OK) {
+		return std::unexpected(describe(cardPath, result));
+	}
+	std::ofstream out(hostPath, std::ios::binary);
+	UINT length = buffer.size();
+	while (result == FR_OK && length == buffer.size() && out) {
+		result = f_read(&file, buffer.data(), buffer.size(), &length);
+		out.write(buffer.data(), length);
+	}
+	f_close(&file);
+	if (result != FR_OK) {
+		return std::unexpected(describe(cardPath, result));
+	}
+	if (!out) {
+		return std::unexpected(hostPath.string() + ": can't write");
+	}
+	return {};
+}
+
+std::expected<void, std::string> copyFolderFromCard(const std::string& cardFolder, const fs::path& hostFolder,
+                                                    HostVector<char>& buffer) {
+	std::error_code error;
+	fs::create_directories(hostFolder, error);
+	if (error) {
+		return std::unexpected(hostFolder.string() + ": " + error.message());
+	}
+	DIR folder;
+	FRESULT result = f_opendir(&folder, cardFolder.c_str());
+	if (result != FR_OK) {
+		return std::unexpected(describe(cardFolder, result));
+	}
+	std::expected<void, std::string> copied;
+	FILINFO info;
+	while (copied && (result = f_readdir(&folder, &info)) == FR_OK && info.fname[0]) {
+		std::string cardPath = cardFolder + "/" + info.fname;
+		fs::path hostPath = hostFolder / toHostName(info.fname);
+		copied = info.fattrib & AM_DIR ? copyFolderFromCard(cardPath, hostPath, buffer)
+		                               : copyFileFromCard(cardPath, hostPath, buffer);
+	}
+	f_closedir(&folder);
+	if (result != FR_OK) {
+		return std::unexpected(describe(cardFolder, result));
+	}
+	return copied;
+}
+
 } // namespace
 
-std::expected<CardImage, std::string> buildCardImage(const fs::path& folder) {
+std::expected<void, std::string> copyFromCard(const std::string& cardFolder, const fs::path& hostFolder) {
+	HostVector<char> buffer(1 << 20);
+	return copyFolderFromCard(cardFolder, hostFolder, buffer);
+}
+
+std::expected<CardImage, std::string> buildCardImage(const fs::path& folder, uint64_t freeBytes) {
 	auto entries = scan(folder);
 	if (!entries) {
 		return std::unexpected(entries.error());
 	}
 	CardImage image;
-	auto formatted = format(image, sectorsFor(*entries));
+	auto formatted = format(image, sectorsFor(*entries, freeBytes));
 	std::expected<void, std::string> filled;
 	if (formatted) {
 		FATFS fileSystem;
