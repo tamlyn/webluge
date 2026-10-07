@@ -73,7 +73,7 @@ file(GLOB_RECURSE host_sources CONFIGURE_DEPENDS
 	${CMAKE_CURRENT_LIST_DIR}/src/*.c
 	${CMAKE_CURRENT_LIST_DIR}/src/*.cpp
 )
-list(FILTER host_sources EXCLUDE REGEX "/src/main\\.cpp$")
+list(FILTER host_sources EXCLUDE REGEX "/src/(main|web)\\.cpp$")
 
 # Everything but main, so that tests can link the firmware too.
 add_library(firmware OBJECT ${firmware_sources} ${host_sources})
@@ -113,10 +113,6 @@ target_compile_options(firmware PUBLIC
 
 target_link_options(firmware PUBLIC
 	-sERROR_ON_UNDEFINED_SYMBOLS=1
-	-sENVIRONMENT=node
-	-sEXIT_RUNTIME=1
-	# Gives the program the host's filesystem, for card folders and images.
-	-sNODERAWFS=1
 	# The firmware uses fixed addresses for SDRAM (0x0C000000-0x10000000) and on-chip RAM (0x20000000-0x20300000).
 	# Starting Emscripten's own data, stack and heap above them leaves those ranges free for the firmware.
 	# Memory that's never touched costs nothing, so the gap is cheap.
@@ -126,15 +122,41 @@ target_link_options(firmware PUBLIC
 	-sMAXIMUM_MEMORY=4gb
 )
 
+# For programs run under Node: the CLI and the tests.
+set(node_program_options
+	-sENVIRONMENT=node
+	-sEXIT_RUNTIME=1
+	# Gives the program the host's filesystem, for card folders and images.
+	-sNODERAWFS=1
+)
+
 add_executable(webluge src/main.cpp)
 target_link_libraries(webluge PRIVATE firmware)
+target_link_options(webluge PRIVATE ${node_program_options})
+
+# The browser's song preview (web/), an ES module. Node too, so that its tests can run it.
+add_executable(webluge_web src/web.cpp)
+target_link_libraries(webluge_web PRIVATE firmware)
+set_target_properties(webluge_web PROPERTIES SUFFIX ".mjs")
+target_link_options(webluge_web PRIVATE
+	--no-entry
+	-sENVIRONMENT=web,worker,node
+	-sMODULARIZE=1
+	-sEXPORT_ES6=1
+	-sEXPORT_NAME=createWebluge
+	-sFORCE_FILESYSTEM=1
+	-sEXPORTED_FUNCTIONS=_webluge_web_load,_webluge_web_play,_webluge_web_render,_webluge_web_rendered_frames
+	-sEXPORTED_RUNTIME_METHODS=FS,ccall,HEAPF32
+)
 
 enable_testing()
 add_executable(storage_test tests/storage/storage_test.cpp)
 target_link_libraries(storage_test PRIVATE firmware)
+target_link_options(storage_test PRIVATE ${node_program_options})
 # emcmake runs tests under Node.
 add_test(NAME storage COMMAND storage_test)
 add_executable(render_test tests/render/render_test.cpp)
 target_link_libraries(render_test PRIVATE firmware)
+target_link_options(render_test PRIVATE ${node_program_options})
 add_test(NAME metronome COMMAND render_test metronome)
 add_test(NAME note COMMAND render_test note)

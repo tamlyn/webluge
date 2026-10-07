@@ -13,7 +13,7 @@ Keep our changes to the firmware small and replayable, so that a new upstream re
 ## Non-goals (for now)
 
 - Native Mac app. arm64 macOS has no 32-bit mode, and the firmware assumes 32-bit pointers. wasm32 matches.
-- Editing songs, the pad/button UI, MIDI, recording, saving.
+- Editing songs, the pad/button UI, MIDI, recording, saving. The one exception is rewriting sample paths when samples move (7.3).
 - Modelling the device's analogue output stage.
 
 ## Phases and checkpoints
@@ -128,6 +128,19 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
 - [ ] **6.2 Transport.** Play, stop and restart from the beginning.
   *Verify:* stopping and replaying gives the same output as the first play (null test on the captured output).
 
+### Phase 7: Card browser
+
+A web app (`web/`) that opens an SD card, or a copy of one, through the File System Access API (Chrome and Edge only), to browse it and preview its songs and samples. Ahead of Phase 5: it previews songs by rendering them in a worker as they play, not in real time on an AudioWorklet.
+
+Build the firmware first (Phase 2), then `cd web && mise exec -- npm install && mise exec -- npm run dev`. Tests: `mise exec -- npm test`.
+
+- [x] **7.1 Browse and audition.** Open a card, remember it across reloads, browse its folders, and play a sample when it's selected, stepping through a folder with the arrow keys. Each sample shows the songs, kits and synths that use it; each song, kit and synth lists its samples, marking any missing.
+  *Verify:* with `Reference Kit 808`, `C.Blade Runner` and `Annoying Song` copied into one card folder, the songs list 4, 0 and 179 samples, none missing, matching the WAVs on the card; a sample shows the song that uses it; and deleting a sample marks it missing in its song.
+- [x] **7.2 Song preview.** Play a song from the card. The page copies only the song, its samples and the settings files at the card's root into a new firmware instance (`webluge_web`, `src/web.cpp`), which builds a card image, loads the song and presses play. A worker renders a second at a time, keeping 3 seconds ahead of playback.
+  *Verify:* `npm test` loads `Reference Kit 808` in the browser build under Node and renders a second that isn't silent. In Chrome, the reference songs and `Annoying Song` (294MB, 179 samples) play, and a song with a sample deleted plays without it and reports it missing.
+- [ ] **7.3 Move samples.** Move or rename samples and folders of samples, rewriting the paths in every song, kit and synth that refers to them. Needs the card opened read-write.
+  *Verify:* after moving samples used by several songs, each song loads in the CLI (`webluge load`) with no missing audio files, and each rewritten XML differs from its original only in the moved paths.
+
 ## Known differences from the device
 
 These are expected, and we accept them unless a listening test says otherwise.
@@ -142,6 +155,10 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-10-07 | Preview songs with a fresh firmware instance per song, rendering in a worker ahead of playback, rather than waiting for Phase 5's real-time AudioWorklet | The firmware boots once per instance (as the tests do), and rendering runs 40 to 100 times faster than real time (4.3), so a worker that keeps a few seconds ahead plays smoothly without SharedArrayBuffer or COOP/COEP headers |
+| 2026-10-07 | Copy only a song's own files into its preview's card image | A whole card can be tens of gigabytes; wasm32 tops out at 4GB, and the image builder at 2GB (3.2) |
+| 2026-10-07 | Find sample references in XML with a pattern, not an XML parser, and keep their positions in the text | Moving samples (7.3) has to rewrite only the paths, leaving the rest of each file byte for byte as the firmware wrote it |
+| 2026-10-07 | The web app is React, Vite and TypeScript, in `web/` with its own `package.json` | Tamlyn's usual stack. The firmware's browser build comes in from `build/` through a Vite alias, so CMake stays the only build for C++ |
 | 2026-10-07 | Card images use 32KB clusters and are sized to their contents, so the FAT type follows from the size (FAT12 below 128MB, FAT16 below 2GB). Real cards are FAT32 | The firmware's streaming works in clusters, so the cluster size matches a real card. FAT32 needs at least 65,525 clusters, a 2GB image held in memory. The FAT type is invisible to the firmware: FatFs reads all three, and sample streaming only uses `clst2sect` and `get_fat` |
 | 2026-10-07 | Load songs the way `setupStartupSong` does: set the song path, open `loadSongUI` and call `performLoad`, with only the scheduler's cluster-loading task registered | The same code as picking a song on the device, including the fallback to samples collected in the song's own folder. `performLoad` waits on the scheduler to fetch sample clusters; the rest of `deluge_main`'s tasks are for Phase 4 to settle |
 | 2026-10-07 | Card images live in Emscripten's heap (`HostAllocator`), not the firmware's allocator | The firmware's `operator new` serves only the device's 64MB of SDRAM, which a card image would exhaust and which the firmware needs for samples |
@@ -169,6 +186,11 @@ These are expected, and we accept them unless a listening test says otherwise.
 ## Discoveries
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
+
+- **2026-10-07** Phase 7 findings:
+  - Songs refer to samples as `fileName="…"` attributes (newer firmware), `<fileName>…</fileName>` elements (older) and `filePath="…"` on audio clips. On the copy of Tamlyn's card, every non-empty one starts with `SAMPLES/`, and none has characters outside ASCII. The firmware writes paths in code page 437, so the app decodes XML as that.
+  - When a sample isn't at its path, the firmware looks in a folder named after the song, beside it, for the path after `SAMPLES/` with its slashes turned into underscores (`AudioFileManager::setupAlternateAudioFilePath`). It's how songs with collected samples, like `SONG060`, load. The app follows the same rule when it marks samples missing and gathers a song's files. Moving samples (7.3) must handle songs that rely on it.
+  - The browser build boots, loads and starts `Annoying Song` 0.56 seconds after Play, including copying 294MB into the worker and building the image.
 
 - **2026-10-07** Phase 4 findings:
   - Stem export (`processing/stem_export`), with its defaults, renders offline while it runs, in fixed 32-frame windows rather than at the codec's pace. It records the mix before song FX, and converts the file to mono afterwards (`SampleRecorder::alterFile`). Fixed windows make it a better reference than resampling, which renders whatever the scheduler asks for.
