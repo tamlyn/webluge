@@ -145,8 +145,8 @@ target_link_options(webluge_web PRIVATE
 	-sEXPORT_ES6=1
 	-sEXPORT_NAME=createWebluge
 	-sFORCE_FILESYSTEM=1
-	-sEXPORTED_FUNCTIONS=_webluge_web_load,_webluge_web_play,_webluge_web_render,_webluge_web_rendered_frames
-	-sEXPORTED_RUNTIME_METHODS=FS,ccall,HEAPF32
+	-sEXPORTED_FUNCTIONS=_webluge_web_load,_webluge_web_play,_webluge_web_describe,_webluge_web_description_length,_webluge_web_render,_webluge_web_rendered_frames,_webluge_web_toggle_clip,_webluge_web_solo_clip,_webluge_web_clip_states,_webluge_web_frames_per_tick
+	-sEXPORTED_RUNTIME_METHODS=FS,ccall,HEAPF32,HEAP32,HEAPU8
 )
 
 enable_testing()

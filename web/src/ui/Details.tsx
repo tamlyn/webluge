@@ -4,6 +4,7 @@ import { pathKey } from "../card/references";
 import { isDocument, type SampleIndex } from "../card/sampleIndex";
 import { collectSongFiles, findSample } from "../preview/songFiles";
 import { SongPlayer } from "../preview/songPlayer";
+import { ClipView } from "./ClipView";
 import { isAudio, isSong } from "./files";
 import { useAsync } from "./useAsync";
 
@@ -65,7 +66,7 @@ function useObjectUrl(card: Card, path: string): string | undefined {
 type PlaybackState =
   | { state: "stopped" }
   | { state: "loading" }
-  | { state: "playing"; player: SongPlayer }
+  | { state: "playing"; player: SongPlayer; context: AudioContext }
   | { state: "failed"; message: string };
 
 function SongPlayback({ card, path, audioContext }: { card: Card; path: string; audioContext: () => AudioContext }) {
@@ -89,28 +90,33 @@ function SongPlayback({ card, path, audioContext }: { card: Card; path: string; 
       const player = await SongPlayer.play(context, files, path, (message) => setPlayback({ state: "failed", message }));
       // Moved on to another file while it loaded.
       if (!mounted.current) return player.stop();
-      setPlayback({ state: "playing", player });
+      setPlayback({ state: "playing", player, context });
     } catch (e) {
       setPlayback({ state: "failed", message: e instanceof Error ? e.message : String(e) });
     }
   }
 
   return (
-    <div className="playback">
-      {playback.state === "playing" ? (
-        <button className="primary" onClick={() => setPlayback({ state: "stopped" })}>
-          Stop
-        </button>
-      ) : (
-        <button className="primary" onClick={play} disabled={playback.state === "loading"}>
-          {playback.state === "loading" ? "Loading…" : "Play"}
-        </button>
+    <>
+      <div className="playback">
+        {playback.state === "playing" ? (
+          <button className="primary" onClick={() => setPlayback({ state: "stopped" })}>
+            Stop
+          </button>
+        ) : (
+          <button className="primary" onClick={play} disabled={playback.state === "loading"}>
+            {playback.state === "loading" ? "Loading…" : "Play"}
+          </button>
+        )}
+        {playback.state === "playing" && playback.player.numMissing > 0 && (
+          <span className="warning">Playing without {playback.player.numMissing} missing audio files</span>
+        )}
+        {playback.state === "failed" && <span className="error">{playback.message}</span>}
+      </div>
+      {playback.state === "playing" && (
+        <ClipView card={card} player={playback.player} audioContext={playback.context} />
       )}
-      {playback.state === "playing" && playback.player.numMissing > 0 && (
-        <span className="warning">Playing without {playback.player.numMissing} missing audio files</span>
-      )}
-      {playback.state === "failed" && <span className="error">{playback.message}</span>}
-    </div>
+    </>
   );
 }
 
@@ -136,7 +142,10 @@ function SamplesUsed({ card, path, index, onGoTo }: Omit<Props, "audioContext">)
               {location ? (
                 <button onClick={() => onGoTo(location)}>{sample}</button>
               ) : (
-                <span className={found ? "missing" : "muted"}>{sample}</span>
+                <span className={found ? "missing" : "muted"}>
+                  {sample}
+                  {found && " (missing)"}
+                </span>
               )}
             </li>
           );

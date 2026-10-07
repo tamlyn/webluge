@@ -138,6 +138,8 @@ Build the firmware first (Phase 2), then `cd web && mise exec -- npm install && 
   *Verify:* with `Reference Kit 808`, `C.Blade Runner` and `Annoying Song` copied into one card folder, the songs list 4, 0 and 179 samples, none missing, matching the WAVs on the card; a sample shows the song that uses it; and deleting a sample marks it missing in its song.
 - [x] **7.2 Song preview.** Play a song from the card. The page copies only the song, its samples and the settings files at the card's root into a new firmware instance (`webluge_web`, `src/web.cpp`), which builds a card image, loads the song and presses play. A worker renders a second at a time, keeping 3 seconds ahead of playback.
   *Verify:* `npm test` loads `Reference Kit 808` in the browser build under Node and renders a second that isn't silent. In Chrome, the reference songs and `Annoying Song` (294MB, 179 samples) play, and a song with a sample deleted plays without it and reports it missing.
+- [x] **7.4 Toggle clips.** While a session-mode song plays, show its clips as the session view does: one row each, with its notes (or its sample's waveform, for an audio clip) across one loop and a play head. Each clip can be started, stopped or soloed through the firmware's own session code (`Session::toggleClipStatus`, `soloClipAction`), so a toggle waits for the end of the clip's loop as on the device, or happens at once with shift. The worker renders 2048 frames at a time, 150ms ahead, so toggles are heard promptly. Arranger songs aren't covered: they show a note instead. Toggles are never saved.
+  *Verify:* `npm test` starts and stops a clip of `Reference Kit 808` in the browser build under Node, quantised and instant. In Chrome, on `Reference Kit 808` and `Swinging In The Rain` (from `~/music/Deluge`, with an audio clip): an armed clip blinks until its loop ends, then starts, stopping the clip on the same instrument; play heads follow each clip's own loop; the audio clip shows its waveform; and 8 seconds of `Annoying Song` play with no chunk scheduled late (at least 135ms ahead).
 - [ ] **7.3 Move samples.** Move or rename samples and folders of samples, rewriting the paths in every song, kit and synth that refers to them. Needs the card opened read-write.
   *Verify:* after moving samples used by several songs, each song loads in the CLI (`webluge load`) with no missing audio files, and each rewritten XML differs from its original only in the moved paths.
 
@@ -155,6 +157,8 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-10-07 | Clip views read the song from the firmware (`webluge_web_describe`), not from the XML | The firmware has already parsed every song format, kits' drum names and the clips' colours. The JSON goes out in code page 437, like the names, and the page decodes it as that |
+| 2026-10-07 | Render 2048 frames at a time, 150ms ahead of playback, from the main thread's timer, rather than through an AudioWorklet and ring buffer (5.1) | Short enough that a toggle is heard almost at once, and cheap: 2048 frames of even `Annoying Song` render in about a millisecond. Chrome doesn't throttle timers in tabs playing audio. Revisit with 5.1 if it underruns |
 | 2026-10-07 | Preview songs with a fresh firmware instance per song, rendering in a worker ahead of playback, rather than waiting for Phase 5's real-time AudioWorklet | The firmware boots once per instance (as the tests do), and rendering runs 40 to 100 times faster than real time (4.3), so a worker that keeps a few seconds ahead plays smoothly without SharedArrayBuffer or COOP/COEP headers |
 | 2026-10-07 | Copy only a song's own files into its preview's card image | A whole card can be tens of gigabytes; wasm32 tops out at 4GB, and the image builder at 2GB (3.2) |
 | 2026-10-07 | Find sample references in XML with a pattern, not an XML parser, and keep their positions in the text | Moving samples (7.3) has to rewrite only the paths, leaving the rest of each file byte for byte as the firmware wrote it |
@@ -186,6 +190,11 @@ These are expected, and we accept them unless a listening test says otherwise.
 ## Discoveries
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
+
+- **2026-10-07** Clip toggling (7.4):
+  - As on the device, only one clip per instrument plays at a time, so starting a clip stops the other clips on its instrument. `Reference Kit 808`'s five clips share one kit, so only one plays at once.
+  - An audio clip's name, and its output's, can be its sample's path, as in `Swinging In The Rain` (saved by firmware 4.x), so the view shows only the file name.
+  - Clip state comes with each rendered chunk, as it stands at the chunk's first frame; the view moves play heads on from there at the song's tempo.
 
 - **2026-10-07** Phase 7 findings:
   - Songs refer to samples as `fileName="…"` attributes (newer firmware), `<fileName>…</fileName>` elements (older) and `filePath="…"` on audio clips. On the copy of Tamlyn's card, every non-empty one starts with `SAMPLES/`, and none has characters outside ASCII. The firmware writes paths in code page 437, so the app decodes XML as that.

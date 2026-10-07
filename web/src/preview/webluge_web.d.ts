@@ -8,8 +8,16 @@ declare module "@firmware/webluge_web.mjs" {
       rmdir(path: string): void;
     };
     HEAPF32: Float32Array;
+    HEAP32: Int32Array;
+    HEAPU8: Uint8Array;
     ccall(name: string, returnType: "number", argTypes: "string"[], args: string[]): number;
     _webluge_web_play(): void;
+    _webluge_web_describe(): number;
+    _webluge_web_description_length(): number;
+    _webluge_web_toggle_clip(index: number, instant: boolean): void;
+    _webluge_web_solo_clip(index: number): void;
+    _webluge_web_clip_states(): number;
+    _webluge_web_frames_per_tick(): number;
     _webluge_web_render(numFrames: number): number;
     _webluge_web_rendered_frames(): number;
   };

@@ -8,6 +8,8 @@
   --accent-text: #ffffff;
   --selected: #fbe3df;
   --warning: #a86200;
+  --grid: #efede8;
+  --grid-bar: #d8d5ce;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme: light dark;
   font: 14px/1.45 system-ui, -apple-system, sans-serif;
@@ -25,6 +27,8 @@
     --accent: #ef5a45;
     --selected: #3a2420;
     --warning: #e0a040;
+    --grid: #262626;
+    --grid-bar: #3a3a3a;
   }
 }
 
@@ -151,6 +155,14 @@ header button {
   overflow-wrap: anywhere;
 }
 
+.links button {
+  color: var(--text);
+}
+
+.links button:hover {
+  text-decoration: underline;
+}
+
 .entries {
   list-style: none;
   margin: 0;
@@ -237,4 +249,95 @@ header button {
     border-right: none;
     border-bottom: 1px solid var(--line);
   }
+}
+
+.clips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.clip {
+  display: grid;
+  grid-template-columns: 22px minmax(60px, 140px) 26px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.clip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip-type {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.clip:not(.active) .clip-name,
+.clip:not(.active) .lane {
+  opacity: 0.4;
+}
+
+.launch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid var(--clip-colour);
+  background: transparent;
+}
+
+.clip.active .launch {
+  background: var(--clip-colour);
+}
+
+.launch.armed {
+  animation: blink 0.5s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    background: transparent;
+    border-color: transparent;
+  }
+}
+
+.solo {
+  padding: 0;
+  height: 22px;
+  font: 11px var(--mono);
+}
+
+.solo.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.lane {
+  position: relative;
+  height: 40px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.lane canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.play-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
 }

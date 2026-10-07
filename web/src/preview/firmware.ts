@@ -1,10 +1,40 @@
 // Runs the firmware on a song: loads it from the files given, presses play and renders what it plays.
 
 import createWebluge, { type Webluge } from "@firmware/webluge_web.mjs";
+import { decodeCp437 } from "../card/cp437";
 
 export type CardFile = { path: string; data: Uint8Array };
 
-export type Rendered = { left: Float32Array<ArrayBuffer>; right: Float32Array<ArrayBuffer> };
+// A song's session clips, as the firmware loaded them. Positions and lengths are in ticks.
+export type SongDescription = {
+  // Songs saved in arranger view play their arrangement, which has no clips to toggle.
+  arrangement: boolean;
+  ticksPerQuarterNote: number;
+  clips: ClipDescription[];
+};
+
+export type ClipDescription = {
+  name: string;
+  output: string;
+  type: "synth" | "kit" | "midi" | "cv" | "audio" | "none";
+  section: number;
+  loopLength: number;
+  colour: string;
+  // Instrument clips. A row's y is its note number, or for a kit, its drum's index.
+  rows?: { y: number; name: string; muted: boolean; colour: string; notes: [pos: number, length: number, velocity: number][] }[];
+  // Audio clips. Start and end are in frames of the sample.
+  sample?: { path: string; start: number; end: number; rate: number };
+};
+
+export type ClipState = { pos: number; active: boolean; armed: boolean; soloing: boolean };
+
+export type Rendered = {
+  left: Float32Array<ArrayBuffer>;
+  right: Float32Array<ArrayBuffer>;
+  // As the first frame played.
+  clips: ClipState[];
+  framesPerTick: number;
+};
 
 export const sampleRate = 44100;
 
@@ -15,6 +45,7 @@ export class Firmware {
     private readonly module: Webluge,
     // Audio files the song uses that aren't on the card. The device plays on without them, silent.
     readonly numMissing: number,
+    readonly song: SongDescription,
   ) {}
 
   // The firmware boots once per instance, so each song needs a new one.
@@ -33,11 +64,15 @@ export class Firmware {
     for (const { path } of files) module.FS.unlink(`${cardFolder}/${path}`);
     for (const folder of [...folders].sort().reverse()) module.FS.rmdir(folder);
     module._webluge_web_play();
-    return new Firmware(module, numMissing);
+    const start = module._webluge_web_describe();
+    const json = decodeCp437(module.HEAPU8.subarray(start, start + module._webluge_web_description_length()));
+    return new Firmware(module, numMissing, JSON.parse(json));
   }
 
   // At least this many frames, as the codec plays in blocks.
   render(numFrames: number): Rendered {
+    const clips = this.clipStates();
+    const framesPerTick = this.module._webluge_web_frames_per_tick();
     const start = this.module._webluge_web_render(numFrames) / Float32Array.BYTES_PER_ELEMENT;
     const length = this.module._webluge_web_rendered_frames();
     const interleaved = this.module.HEAPF32.subarray(start, start + 2 * length);
@@ -47,6 +82,23 @@ export class Firmware {
       left[i] = interleaved[2 * i];
       right[i] = interleaved[2 * i + 1];
     }
-    return { left, right };
+    return { left, right, clips, framesPerTick };
+  }
+
+  // Quantised to the clip's loop, as on the device, unless instant.
+  toggleClip(index: number, instant: boolean) {
+    this.module._webluge_web_toggle_clip(index, instant);
+  }
+
+  soloClip(index: number) {
+    this.module._webluge_web_solo_clip(index);
+  }
+
+  private clipStates(): ClipState[] {
+    const start = this.module._webluge_web_clip_states() / Int32Array.BYTES_PER_ELEMENT;
+    return this.song.clips.map((_, i) => {
+      const flags = this.module.HEAP32[start + 2 * i + 1];
+      return { pos: this.module.HEAP32[start + 2 * i], active: !!(flags & 1), armed: !!(flags & 2), soloing: !!(flags & 4) };
+    });
   }
 }
