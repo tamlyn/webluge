@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { type Card, baseName, parentPath } from "../card/card";
 import { pathKey } from "../card/references";
 import { findSample, isDocument, type UsageIndex } from "../card/usageIndex";
-import { collectSongFiles } from "../preview/songFiles";
-import { SongPlayer } from "../preview/songPlayer";
+import { collectDocumentFiles } from "../preview/documentFiles";
+import { Player } from "../preview/player";
+import { DrumPads, Keyboard } from "./Audition";
 import { ClipSkeleton, ClipView } from "./ClipView";
 import { Deck, type PlayState, useRememberedFlag } from "./Deck";
 import { isAudio, isSong } from "./files";
@@ -29,7 +30,7 @@ export function Details(props: Props) {
       ) : isSong(path) ? (
         <SongDetails {...props} />
       ) : isDocument(path) ? (
-        <DocumentDetails {...props} />
+        <PresetDetails {...props} />
       ) : (
         <TextDetails {...props} />
       )}
@@ -120,11 +121,40 @@ function samplesSummary({ samples, found }: ReturnType<typeof useSamples>): stri
   return `${plural(samples.length, "sample")}${found && samples.length ? (numMissing ? `, ${numMissing} missing` : ", all on card") : ""}`;
 }
 
-function DocumentDetails({ card, path, index, onGoTo }: Props) {
+// A kit or synth, loaded into the firmware as soon as it's selected, to play its drums or notes.
+function PresetDetails({ card, path, index, audioContext, onGoTo }: Props) {
   const samples = useSamples(card, path, index);
+  const [loading, setLoading] = useState<Loading>({ state: "loading" });
+  const player = loading.state === "ready" ? loading.player : undefined;
+
+  useEffect(() => {
+    setLoading({ state: "loading" });
+    const failed = (message: string) => setLoading({ state: "failed", message });
+    return loadPlayer(card, path, true, browseDelay, failed, (loaded) => {
+      setLoading({ state: "ready", player: loaded });
+      // Silent until auditioned, so it can run before the page has been clicked to allow sound.
+      loaded.start(audioContext(), failed);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card, path]);
+
+  function audition(y: number, on: boolean) {
+    // Resumed while handling the press, as browsers only allow it then.
+    if (on) void audioContext().resume();
+    player?.audition(y, on);
+  }
+
+  const kind = documentKind(path);
   return (
     <>
-      <Oled title={withoutExtension(path)} subtitle={`${documentKind(path)} · ${samplesSummary(samples)}`} />
+      <Oled title={withoutExtension(path)} subtitle={`${kind} · ${samplesSummary(samples)}`} />
+      {loading.state === "failed" ? (
+        <p className="notice error">{loading.message}</p>
+      ) : kind === "kit" ? (
+        <DrumPads kit={player?.song.clips[0]} onAudition={audition} />
+      ) : (
+        <Keyboard disabled={!player} onAudition={audition} />
+      )}
       <SampleList {...samples} onGoTo={onGoTo} />
     </>
   );
@@ -213,48 +243,62 @@ function LinkList({
   );
 }
 
-type Loading = { state: "loading" } | { state: "ready"; player: SongPlayer } | { state: "failed"; message: string };
+type Loading = { state: "loading" } | { state: "ready"; player: Player } | { state: "failed"; message: string };
 
-// Long enough to skip past songs while arrowing through a folder, without loading each one.
+// Long enough to skip past songs, kits and synths while arrowing through a folder, without loading each one.
 const browseDelay = 250;
+
+// Loads a song, kit or synth into a new firmware instance after the delay. Returns a function that abandons the load,
+// or stops the player once it's loaded.
+function loadPlayer(
+  card: Card,
+  path: string,
+  preset: boolean,
+  delay: number,
+  onFailed: (message: string) => void,
+  onLoaded: (player: Player) => void,
+): () => void {
+  let current = true;
+  let loaded: Player | undefined;
+  const timer = setTimeout(async () => {
+    try {
+      const files = await collectDocumentFiles(card, path);
+      if (!current) return;
+      loaded = await Player.load(files, path, preset);
+      if (!current) return loaded.stop();
+      onLoaded(loaded);
+    } catch (e) {
+      if (current) onFailed(errorMessage(e));
+    }
+  }, delay);
+  return () => {
+    current = false;
+    clearTimeout(timer);
+    loaded?.stop();
+  };
+}
 
 function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
   const samples = useSamples(card, path, index);
   const [loading, setLoading] = useState<Loading>({ state: "loading" });
   const [autoPlay, toggleAutoPlay] = useRememberedFlag("webluge.autoPlaySongs", false);
   // The latest song loaded, still shown while it loads again after stopping.
-  const [shown, setShown] = useState<SongPlayer>();
+  const [shown, setShown] = useState<Player>();
   // Auto-play presses play as soon as it's selected, and it starts once loaded.
   const [playing, setPlaying] = useState(autoPlay);
   const [loads, setLoads] = useState(0);
   const player = loading.state === "ready" ? loading.player : undefined;
 
   useEffect(() => {
-    let current = true;
-    let loaded: SongPlayer | undefined;
     setLoading({ state: "loading" });
-    const timer = setTimeout(
-      async () => {
-        try {
-          const files = await collectSongFiles(card, path);
-          if (!current) return;
-          loaded = await SongPlayer.load(files, path);
-          if (!current) return loaded.stop();
-          setLoading({ state: "ready", player: loaded });
-          setShown(loaded);
-        } catch (e) {
-          if (!current) return;
-          setLoading({ state: "failed", message: errorMessage(e) });
-          setPlaying(false);
-        }
-      },
-      loads ? 0 : browseDelay,
-    );
-    return () => {
-      current = false;
-      clearTimeout(timer);
-      loaded?.stop();
+    const failed = (message: string) => {
+      setLoading({ state: "failed", message });
+      setPlaying(false);
     };
+    return loadPlayer(card, path, false, loads ? 0 : browseDelay, failed, (loaded) => {
+      setLoading({ state: "ready", player: loaded });
+      setShown(loaded);
+    });
   }, [card, path, loads]);
 
   // Play waits for the song to load.
@@ -313,7 +357,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function Tempo({ player }: { player: SongPlayer }) {
+function Tempo({ player }: { player: Player }) {
   const [bpm, setBpm] = useState<number>();
   useEffect(() => {
     const timer = setInterval(() => setBpm(player.bpm()), 250);

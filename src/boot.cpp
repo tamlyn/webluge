@@ -13,6 +13,7 @@
 #include "io/midi/midi_device_manager.h"
 #include "io/midi/midi_follow.h"
 #include "model/clip/audio_clip.h"
+#include "model/clip/instrument_clip.h"
 #include "model/instrument/kit.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "model/song/clip_iterators.h"
@@ -30,6 +31,8 @@
 #include "util/functions.h"
 #include "util/pack.h"
 #include <cstdio>
+#include <cstring>
+#include <strings.h>
 
 void setupBlankSong();
 void registerTasks();
@@ -122,6 +125,33 @@ bool loadSong(const char* path) {
 		return false;
 	}
 	loadSongUI.performLoad(storageManager);
+	return hostDisplay->errorCount() == 0;
+}
+
+// As the preset browser does for a clip that's the only one using its instrument, which the blank song's is.
+bool loadPreset(const char* path) {
+	FilePointer filePointer;
+	const char* slash = std::strrchr(path, '/');
+	const char* dot = std::strrchr(path, '.');
+	if (!slash || !dot || dot < slash || !storageManager.fileExists(path, &filePointer)) {
+		std::fprintf(stderr, "%s: not on the card\n", path);
+		return false;
+	}
+	String dirPath;
+	String name;
+	dirPath.set(path, slash - path);
+	name.set(slash + 1, dot - slash - 1);
+	OutputType type = strncasecmp(path, "KITS/", 5) ? OutputType::SYNTH : OutputType::KIT;
+
+	auto* clip = static_cast<InstrumentClip*>(currentSong->sessionClips.getClipAtIndex(0));
+	Instrument* instrument;
+	if (storageManager.loadInstrumentFromFile(currentSong, clip, type, false, &instrument, &filePointer, &name,
+	                                          &dirPath)
+	    != Error::NONE) {
+		return false;
+	}
+	instrument->loadAllAudioFiles(true);
+	currentSong->replaceInstrument(static_cast<Instrument*>(clip->output), instrument);
 	return hostDisplay->errorCount() == 0;
 }
 

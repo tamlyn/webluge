@@ -1,16 +1,19 @@
-// Plays a song as the firmware renders it. It renders only a little ahead of what's playing, so that toggling a
-// clip is heard soon after.
+// Plays a song, kit or synth as the firmware renders it. It renders only a little ahead of what's playing, so that
+// toggling a clip or auditioning a drum is heard soon after.
 
 import type { CardFile, ClipState, SongDescription } from "./firmware";
 import { bpm, sampleRate } from "./firmware";
 import type { Request, Response } from "./worker";
 
-const chunkFrames = 2048;
-const secondsAhead = 0.15;
+// An audition should sound as a pad is pressed. A kit or synth alone renders cheaply enough to stay this close.
+const pacing = {
+  song: { chunkFrames: 2048, secondsAhead: 0.15 },
+  preset: { chunkFrames: 512, secondsAhead: 0.05 },
+};
 
 type Timeline = { time: number; clips: ClipState[]; framesPerTick: number };
 
-export class SongPlayer {
+export class Player {
   private context?: AudioContext;
   private nextTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
@@ -21,32 +24,34 @@ export class SongPlayer {
 
   private constructor(
     private readonly worker: Worker,
+    private readonly pacing: { chunkFrames: number; secondsAhead: number },
     readonly numMissing: number,
     readonly song: SongDescription,
     // As the song was saved, before it plays.
     readonly initialStates: ClipState[],
   ) {}
 
-  static async load(files: CardFile[], songPath: string): Promise<SongPlayer> {
+  // A kit or synth is a preset: the song is then the blank one, with the preset its only clip.
+  static async load(files: CardFile[], path: string, preset: boolean): Promise<Player> {
     const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     const loaded = await new Promise<Response>((resolve) => {
       worker.onmessage = ({ data }: MessageEvent<Response>) => resolve(data);
-      post(worker, { type: "load", files, songPath }, files.map((f) => f.data.buffer as ArrayBuffer));
+      post(worker, { type: "load", files, path, preset }, files.map((f) => f.data.buffer as ArrayBuffer));
     });
     if (loaded.type !== "loaded") {
       worker.terminate();
       throw new Error(loaded.type === "error" ? loaded.message : "Unexpected reply");
     }
-    const player = new SongPlayer(worker, loaded.numMissing, loaded.song, loaded.clips);
+    const player = new Player(worker, pacing[preset ? "preset" : "song"], loaded.numMissing, loaded.song, loaded.clips);
     worker.onmessage = ({ data }: MessageEvent<Response>) => player.pending?.(data);
     return player;
   }
 
-  // Plays from the start. Once stopped, the song must be loaded again to play it again.
+  // Plays from the start. Once stopped, it must be loaded again to play it again.
   start(context: AudioContext, onError: (message: string) => void) {
     if (this.context || this.stopped) return;
     this.context = context;
-    this.nextTime = context.currentTime + 0.1;
+    this.nextTime = context.currentTime + this.pacing.secondsAhead;
     this.pump().catch((error: Error) => {
       this.stop();
       onError(error.message);
@@ -65,6 +70,11 @@ export class SongPlayer {
 
   soloClip(index: number) {
     post(this.worker, { type: "solo", index });
+  }
+
+  // A preset's drum, by its row, or a synth's note.
+  audition(y: number, on: boolean) {
+    post(this.worker, { type: "audition", y, on });
   }
 
   // As heard now, with positions moved on from the latest chunk to start playing.
@@ -90,11 +100,11 @@ export class SongPlayer {
   private async pump() {
     const context = this.context!;
     while (!this.stopped) {
-      if (this.nextTime - context.currentTime > secondsAhead) {
+      if (this.nextTime - context.currentTime > this.pacing.secondsAhead) {
         await new Promise((resolve) => setTimeout(resolve, 10));
         continue;
       }
-      const response = await this.request({ type: "render", numFrames: chunkFrames });
+      const response = await this.request({ type: "render", numFrames: this.pacing.chunkFrames });
       if (this.stopped) return;
       if (response.type === "error") throw new Error(response.message);
       if (response.type === "rendered") {

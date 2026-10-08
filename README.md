@@ -4,7 +4,7 @@ Play [Synthstrom Deluge](https://synthstrom.com/product/deluge/) songs in the br
 
 Rather than reimplementing the synth engines, Webluge compiles the [Deluge firmware](https://github.com/SynthstromAudible/DelugeFirmware) itself to WebAssembly and swaps out only the hardware layer. The sequencer, automation and audio engine are the device's own code.
 
-**Try it:** [tamlyn.github.io/webluge](https://tamlyn.github.io/webluge/). Open a copy of your SD card to browse it, audition samples and play songs, starting and stopping clips as you would in session view. It needs the File System Access API, so Chrome or Edge only.
+**Try it:** [tamlyn.github.io/webluge](https://tamlyn.github.io/webluge/). Open a copy of your SD card to browse it, audition samples, kits and synths, and play songs, starting and stopping clips as you would in session view. It needs the File System Access API, so Chrome or Edge only.
 
 It's a work in progress. Most sounds match the device closely but not yet exactly, and there's no editing, MIDI or recording. [PLAN.md](PLAN.md) has the details.
 

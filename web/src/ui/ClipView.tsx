@@ -1,9 +1,9 @@
 import { type CSSProperties, type MouseEvent, useEffect, useRef, useState } from "react";
 import { baseName, type Card } from "../card/card";
 import type { ClipDescription, ClipState } from "../preview/firmware";
-import type { SongPlayer } from "../preview/songPlayer";
+import type { Player } from "../preview/player";
 
-type Props = { card: Card; player: SongPlayer; playing: boolean; audioContext: AudioContext };
+type Props = { card: Card; player: Player; playing: boolean; audioContext: AudioContext };
 
 // The song's session clips, like the Deluge's session view: each can be started, stopped or soloed while it plays.
 export function ClipView({ card, player, playing, audioContext }: Props) {

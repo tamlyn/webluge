@@ -12,6 +12,7 @@ declare module "@firmware/webluge_web.mjs" {
     HEAPU8: Uint8Array;
     ccall(name: string, returnType: "number", argTypes: "string"[], args: string[]): number;
     _webluge_web_play(): void;
+    _webluge_web_audition(y: number, on: boolean): void;
     _webluge_web_describe(): number;
     _webluge_web_description_length(): number;
     _webluge_web_toggle_clip(index: number, instant: boolean): void;

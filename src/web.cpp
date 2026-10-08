@@ -1,5 +1,5 @@
-// Entry points for the browser build, which previews songs: web/src/preview/worker.ts drives them. The firmware boots
-// once per instance, so the page makes a new one for each song.
+// Entry points for the browser build, which previews songs, kits and synths: web/src/preview/worker.ts drives them. The
+// firmware boots once per instance, so the page makes a new one for each.
 
 #include "boot.h"
 #include "card/image.h"
@@ -10,7 +10,11 @@
 #include "host_allocator.h"
 #include "model/clip/audio_clip.h"
 #include "model/clip/instrument_clip.h"
+#include "extern.h"
 #include "model/drum/drum.h"
+#include "model/instrument/kit.h"
+#include "model/instrument/melodic_instrument.h"
+#include "model/model_stack.h"
 #include "model/note/note.h"
 #include "model/note/note_row.h"
 #include "model/output.h"
@@ -183,30 +187,74 @@ Clip* sessionClip(int32_t index) {
 	return currentSong->sessionClips.getClipAtIndex(index);
 }
 
-} // namespace
-
-extern "C" {
-
-// Builds a card image from a folder in the in-memory filesystem, boots with it and loads a song. Returns the number
-// of audio files the song uses that aren't on the card, or -1 if it didn't load.
-EMSCRIPTEN_KEEPALIVE int32_t webluge_web_load(const char* cardFolder, const char* songPath) {
+// Builds a card image from a folder in the in-memory filesystem and boots with it.
+bool boot(const char* cardFolder) {
 	auto image = webluge::buildCardImage(cardFolder);
 	if (!image) {
 		std::fprintf(stderr, "%s\n", image.error().c_str());
-		return -1;
+		return false;
 	}
 	card = std::move(*image);
 	webluge_disk_insert(card.data(), card.size() / WEBLUGE_SECTOR_SIZE);
 	webluge::boot();
-	if (!webluge::loadSong(songPath)) {
+	webluge_audio_set_sink(collect, nullptr);
+	return true;
+}
+
+} // namespace
+
+extern "C" {
+
+// Boots with a card folder and loads a song. Returns the number of audio files the song uses that aren't on the
+// card, or -1 if it didn't load.
+EMSCRIPTEN_KEEPALIVE int32_t webluge_web_load(const char* cardFolder, const char* songPath) {
+	if (!boot(cardFolder) || !webluge::loadSong(songPath)) {
+		return -1;
+	}
+	return webluge::reportSong();
+}
+
+// Boots with a card folder and loads a kit or synth into the blank song, to audition. Returns as webluge_web_load.
+EMSCRIPTEN_KEEPALIVE int32_t webluge_web_load_preset(const char* cardFolder, const char* presetPath) {
+	if (!boot(cardFolder) || !webluge::loadPreset(presetPath)) {
 		return -1;
 	}
 	return webluge::reportSong();
 }
 
 EMSCRIPTEN_KEEPALIVE void webluge_web_play() {
-	webluge_audio_set_sink(collect, nullptr);
 	webluge::startPlayback();
+}
+
+// As holding an audition pad of the preset's clip, the song's only one: a kit's drum, by its row, or a synth's note.
+EMSCRIPTEN_KEEPALIVE void webluge_web_audition(int32_t y, bool on) {
+	auto* clip = static_cast<InstrumentClip*>(currentSong->sessionClips.getClipAtIndex(0));
+	char modelStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStack* modelStack = setupModelStackWithSong(modelStackMemory, currentSong);
+	if (clip->output->type == OutputType::KIT) {
+		auto* kit = static_cast<Kit*>(clip->output);
+		NoteRow* row = y >= 0 && y < clip->noteRows.getNumElements() ? clip->noteRows.getElement(y) : nullptr;
+		if (!row || !row->drum) {
+			return;
+		}
+		ModelStackWithNoteRow* modelStackWithNoteRow =
+		    modelStack->addTimelineCounter(clip)->addNoteRow(clip->getNoteRowId(row, y), row);
+		if (on) {
+			kit->beginAuditioningforDrum(modelStackWithNoteRow, row->drum, kit->defaultVelocity, zeroMPEValues);
+		}
+		else {
+			kit->endAuditioningForDrum(modelStackWithNoteRow, row->drum);
+		}
+	}
+	else if (clip->output->type == OutputType::SYNTH) {
+		auto* synth = static_cast<MelodicInstrument*>(clip->output);
+		if (on) {
+			synth->beginAuditioningForNote(modelStack, y, synth->defaultVelocity, zeroMPEValues);
+		}
+		else {
+			synth->endAuditioningForNote(modelStack, y);
+		}
+	}
 }
 
 // The song's session clips and their notes, as JSON, valid until the next call. Call after play, which decides

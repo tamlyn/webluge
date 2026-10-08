@@ -1,4 +1,4 @@
-// Runs the firmware on a song: loads it from the files given, presses play and renders what it plays.
+// Runs the firmware on a song, kit or synth: loads it from the files given and renders what it plays.
 
 import createWebluge, { type Webluge } from "@firmware/webluge_web.mjs";
 import { decodeCp437 } from "../card/cp437";
@@ -54,6 +54,23 @@ export class Firmware {
 
   // The firmware boots once per instance, so each song needs a new one.
   static async loadSong(files: CardFile[], songPath: string, log?: (text: string) => void): Promise<Firmware> {
+    const firmware = await Firmware.load("webluge_web_load", files, songPath, log);
+    firmware.module._webluge_web_play();
+    return firmware;
+  }
+
+  // A kit or synth, in place of the blank song's synth, to audition. It's the song's only clip, and nothing plays
+  // until it's auditioned.
+  static loadPreset(files: CardFile[], presetPath: string, log?: (text: string) => void): Promise<Firmware> {
+    return Firmware.load("webluge_web_load_preset", files, presetPath, log);
+  }
+
+  private static async load(
+    entry: "webluge_web_load" | "webluge_web_load_preset",
+    files: CardFile[],
+    path: string,
+    log?: (text: string) => void,
+  ): Promise<Firmware> {
     const module = await createWebluge(log && { print: log, printErr: log });
     const folders = new Set<string>();
     for (const { path, data } of files) {
@@ -62,12 +79,11 @@ export class Firmware {
       module.FS.writeFile(`${cardFolder}/${path}`, data);
       for (let f = folder; f !== cardFolder; f = f.replace(/\/[^/]*$/, "")) folders.add(f);
     }
-    const numMissing = module.ccall("webluge_web_load", "number", ["string", "string"], [cardFolder, songPath]);
-    if (numMissing < 0) throw new Error(`Couldn't load ${songPath}`);
+    const numMissing = module.ccall(entry, "number", ["string", "string"], [cardFolder, path]);
+    if (numMissing < 0) throw new Error(`Couldn't load ${path}`);
     // The card image has its own copy now.
-    for (const { path } of files) module.FS.unlink(`${cardFolder}/${path}`);
+    for (const file of files) module.FS.unlink(`${cardFolder}/${file.path}`);
     for (const folder of [...folders].sort().reverse()) module.FS.rmdir(folder);
-    module._webluge_web_play();
     const start = module._webluge_web_describe();
     const json = decodeCp437(module.HEAPU8.subarray(start, start + module._webluge_web_description_length()));
     return new Firmware(module, numMissing, JSON.parse(json));
@@ -96,6 +112,11 @@ export class Firmware {
 
   soloClip(index: number) {
     this.module._webluge_web_solo_clip(index);
+  }
+
+  // A preset's drum, by its row, or a synth's note, held until it's auditioned again with on false.
+  audition(y: number, on: boolean) {
+    this.module._webluge_web_audition(y, on);
   }
 
   clipStates(): ClipState[] {

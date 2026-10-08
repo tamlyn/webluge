@@ -936,6 +936,99 @@ button.link:hover {
   background: var(--bright);
 }
 
+/* A kit's drums and a synth's keys, held to play */
+
+.drum-pads {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  gap: 8px;
+}
+
+.drum-pad {
+  width: 96px;
+  height: 72px;
+  padding: 8px;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 8px;
+  border: 2px solid var(--pad-colour);
+  background: color-mix(in srgb, var(--pad-colour) 15%, var(--raised));
+  color: var(--soft);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.drum-pad.lit {
+  background: var(--pad-colour);
+  color: var(--bg);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--pad-colour) 60%, transparent);
+}
+
+.drum-pad.skeleton {
+  border-color: var(--line);
+  background: var(--panel);
+  animation: pulse 1.2s ease-in-out infinite alternate;
+}
+
+.octaves {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.keyboard {
+  --black-width: calc(60% / var(--whites));
+  position: relative;
+  display: flex;
+  gap: 3px;
+  height: 150px;
+  touch-action: none;
+  user-select: none;
+}
+
+.keyboard button {
+  padding: 0;
+  border: 2px solid var(--line-strong);
+}
+
+.keyboard .white {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 6px;
+  border-radius: 0 0 6px 6px;
+  background: var(--raised);
+}
+
+.keyboard .black {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: calc(var(--at) * 100% / var(--whites) - var(--black-width) / 2);
+  width: var(--black-width);
+  height: 58%;
+  border-radius: 0 0 4px 4px;
+  background: var(--oled);
+}
+
+.keyboard .lit {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 14px var(--accent-glow);
+}
+
+.keyboard .lit .label {
+  color: var(--bg);
+}
+
 @media (max-width: 800px) {
   .top {
     flex-wrap: wrap;

@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { bpm, type CardFile, Firmware, sampleRate } from "./firmware";
 
 const card = fileURLToPath(new URL("../../../reference/1.2.1/Reference Kit 808/card", import.meta.url));
+// Factory presets: the TR-808 kit, cut down to the four drums the reference card has samples for, and a synth.
+const presets = fileURLToPath(new URL("./fixtures", import.meta.url));
 
 async function readCard(folder: string): Promise<CardFile[]> {
   const files: CardFile[] = [];
@@ -15,6 +17,10 @@ async function readCard(folder: string): Promise<CardFile[]> {
     }
   }
   return files;
+}
+
+function peak(samples: Float32Array): number {
+  return samples.reduce((max, s) => Math.max(max, Math.abs(s)), 0);
 }
 
 function load() {
@@ -28,9 +34,8 @@ describe("Firmware", () => {
     const { left, right } = firmware.render(sampleRate);
     expect(left.length).toBeGreaterThanOrEqual(sampleRate);
     expect(right.length).toBe(left.length);
-    const peak = left.reduce((max, s) => Math.max(max, Math.abs(s)), 0);
-    expect(peak).toBeGreaterThan(0.01);
-    expect(peak).toBeLessThanOrEqual(1);
+    expect(peak(left)).toBeGreaterThan(0.01);
+    expect(peak(left)).toBeLessThanOrEqual(1);
   });
 
   it("describes the song's clips", async () => {
@@ -69,5 +74,39 @@ describe("Firmware", () => {
     firmware.toggleClip(index, true);
     firmware.render(1024);
     expect(firmware.render(1024).clips[index]).toMatchObject({ active: false, armed: false });
+  });
+}, 60_000);
+
+describe("Firmware with a kit or synth", () => {
+  async function loadPreset(path: string) {
+    return Firmware.loadPreset([...(await readCard(card)), ...(await readCard(presets))], path, () => {});
+  }
+
+  it("auditions each of a kit's drums", async () => {
+    const firmware = await loadPreset("KITS/TR-808.XML");
+    expect(firmware.numMissing).toBe(0);
+    expect(firmware.song.clips).toHaveLength(1);
+    const [kit] = firmware.song.clips;
+    expect(kit).toMatchObject({ type: "kit", output: "TR-808" });
+    expect(kit.rows!.map((row) => row.name)).toEqual(["KICK", "SNARE", "HATC", "HATO"]);
+    for (let y = 0; y < kit.rows!.length; y++) {
+      firmware.render(sampleRate);
+      expect(peak(firmware.render(4096).left)).toBeLessThan(0.0001);
+      firmware.audition(y, true);
+      expect(peak(firmware.render(4096).left)).toBeGreaterThan(0.01);
+      firmware.audition(y, false);
+    }
+  });
+
+  it("holds a synth's note until it's released", async () => {
+    const firmware = await loadPreset("SYNTHS/Rich Saw Bass.XML");
+    expect(firmware.song.clips[0]).toMatchObject({ type: "synth", output: "Rich Saw Bass" });
+    expect(peak(firmware.render(4096).left)).toBeLessThan(0.0001);
+    firmware.audition(48, true);
+    firmware.render(sampleRate);
+    expect(peak(firmware.render(4096).left)).toBeGreaterThan(0.01);
+    firmware.audition(48, false);
+    firmware.render(sampleRate);
+    expect(peak(firmware.render(4096).left)).toBeLessThan(0.0001);
   });
 }, 60_000);

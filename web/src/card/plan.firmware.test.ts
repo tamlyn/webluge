@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { Firmware } from "../preview/firmware";
-import { collectSongFiles } from "../preview/songFiles";
+import { collectDocumentFiles } from "../preview/documentFiles";
 import { Card } from "./card";
 import { encodeCp437 } from "./cp437";
 import { memoryFolder, type MemoryFiles } from "./memoryFolder";
@@ -37,7 +37,7 @@ async function move(card: Card, moves: Move[]) {
 }
 
 async function load(card: Card) {
-  return Firmware.loadSong(await collectSongFiles(card, songPath), songPath);
+  return Firmware.loadSong(await collectDocumentFiles(card, songPath), songPath);
 }
 
 describe("Moving files a song uses", () => {
