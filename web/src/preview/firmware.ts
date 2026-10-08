@@ -45,32 +45,39 @@ export function bpm(framesPerTick: number, ticksPerQuarterNote: number): number 
 const cardFolder = "/card";
 
 export class Firmware {
+  readonly song: SongDescription;
+
   private constructor(
     private readonly module: Webluge,
     // Audio files the song uses that aren't on the card. The device plays on without them, silent.
     readonly numMissing: number,
-    readonly song: SongDescription,
-  ) {}
+  ) {
+    const start = module._webluge_web_describe();
+    const json = decodeCp437(module.HEAPU8.subarray(start, start + module._webluge_web_description_length()));
+    this.song = JSON.parse(json);
+  }
 
   // The firmware boots once per instance, so each song needs a new one.
   static async loadSong(files: CardFile[], songPath: string, log?: (text: string) => void): Promise<Firmware> {
-    const firmware = await Firmware.load("webluge_web_load", files, songPath, log);
-    firmware.module._webluge_web_play();
-    return firmware;
+    const { module, numMissing } = await Firmware.boot("webluge_web_load", files, songPath, log);
+    // Before describing: pressing play is when the firmware chooses between the arrangement and the session.
+    module._webluge_web_play();
+    return new Firmware(module, numMissing);
   }
 
   // A kit or synth, in place of the blank song's synth, to audition. It's the song's only clip, and nothing plays
   // until it's auditioned.
-  static loadPreset(files: CardFile[], presetPath: string, log?: (text: string) => void): Promise<Firmware> {
-    return Firmware.load("webluge_web_load_preset", files, presetPath, log);
+  static async loadPreset(files: CardFile[], presetPath: string, log?: (text: string) => void): Promise<Firmware> {
+    const { module, numMissing } = await Firmware.boot("webluge_web_load_preset", files, presetPath, log);
+    return new Firmware(module, numMissing);
   }
 
-  private static async load(
+  private static async boot(
     entry: "webluge_web_load" | "webluge_web_load_preset",
     files: CardFile[],
     path: string,
     log?: (text: string) => void,
-  ): Promise<Firmware> {
+  ): Promise<{ module: Webluge; numMissing: number }> {
     const module = await createWebluge(log && { print: log, printErr: log });
     const folders = new Set<string>();
     for (const { path, data } of files) {
@@ -84,9 +91,7 @@ export class Firmware {
     // The card image has its own copy now.
     for (const file of files) module.FS.unlink(`${cardFolder}/${file.path}`);
     for (const folder of [...folders].sort().reverse()) module.FS.rmdir(folder);
-    const start = module._webluge_web_describe();
-    const json = decodeCp437(module.HEAPU8.subarray(start, start + module._webluge_web_description_length()));
-    return new Firmware(module, numMissing, JSON.parse(json));
+    return { module, numMissing };
   }
 
   // At least this many frames, as the codec plays in blocks.

@@ -23,8 +23,18 @@ function peak(samples: Float32Array): number {
   return samples.reduce((max, s) => Math.max(max, Math.abs(s)), 0);
 }
 
+const songPath = "SONGS/Reference Kit 808.XML";
+
 function load() {
-  return readCard(card).then((files) => Firmware.loadSong(files, "SONGS/Reference Kit 808.XML", () => {}));
+  return readCard(card).then((files) => Firmware.loadSong(files, songPath, () => {}));
+}
+
+// The reference song as if saved in arranger view, which the firmware reads as playing its arrangement.
+async function loadInArrangerView() {
+  const files = await readCard(card);
+  const song = files.find((file) => file.path === songPath)!;
+  song.data = Buffer.from(song.data.toString().replace("<song", '<song inArrangementView="1"'));
+  return Firmware.loadSong(files, songPath, () => {});
 }
 
 describe("Firmware", () => {
@@ -48,6 +58,11 @@ describe("Firmware", () => {
       expect(clip.rows!.some((row) => row.notes.length)).toBe(true);
     }
     expect(song.clips[0].rows!.map((row) => row.name)).toEqual(["KICK", "SNARE", "HATC", "HATO"]);
+  });
+
+  it("describes a song saved in arranger view as playing its arrangement", async () => {
+    const { song } = await loadInArrangerView();
+    expect(song.arrangement).toBe(true);
   });
 
   it("plays at the song's tempo", async () => {
