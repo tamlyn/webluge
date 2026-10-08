@@ -98,7 +98,7 @@ export class Firmware {
     this.module._webluge_web_solo_clip(index);
   }
 
-  private clipStates(): ClipState[] {
+  clipStates(): ClipState[] {
     const start = this.module._webluge_web_clip_states() / Int32Array.BYTES_PER_ELEMENT;
     return this.song.clips.map((_, i) => {
       const flags = this.module.HEAP32[start + 2 * i + 1];

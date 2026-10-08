@@ -11,6 +11,7 @@ const secondsAhead = 0.15;
 type Timeline = { time: number; clips: ClipState[]; framesPerTick: number };
 
 export class SongPlayer {
+  private context?: AudioContext;
   private nextTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
   private stopped = false;
@@ -19,18 +20,14 @@ export class SongPlayer {
   private timeline: Timeline[] = [];
 
   private constructor(
-    private readonly context: AudioContext,
     private readonly worker: Worker,
     readonly numMissing: number,
     readonly song: SongDescription,
+    // As the song was saved, before it plays.
+    readonly initialStates: ClipState[],
   ) {}
 
-  static async play(
-    context: AudioContext,
-    files: CardFile[],
-    songPath: string,
-    onError: (message: string) => void,
-  ): Promise<SongPlayer> {
+  static async load(files: CardFile[], songPath: string): Promise<SongPlayer> {
     const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     const loaded = await new Promise<Response>((resolve) => {
       worker.onmessage = ({ data }: MessageEvent<Response>) => resolve(data);
@@ -40,14 +37,20 @@ export class SongPlayer {
       worker.terminate();
       throw new Error(loaded.type === "error" ? loaded.message : "Unexpected reply");
     }
-    const player = new SongPlayer(context, worker, loaded.numMissing, loaded.song);
+    const player = new SongPlayer(worker, loaded.numMissing, loaded.song, loaded.clips);
     worker.onmessage = ({ data }: MessageEvent<Response>) => player.pending?.(data);
-    player.nextTime = context.currentTime + 0.1;
-    player.pump().catch((error: Error) => {
-      player.stop();
+    return player;
+  }
+
+  // Plays from the start. Once stopped, the song must be loaded again to play it again.
+  start(context: AudioContext, onError: (message: string) => void) {
+    if (this.context || this.stopped) return;
+    this.context = context;
+    this.nextTime = context.currentTime + 0.1;
+    this.pump().catch((error: Error) => {
+      this.stop();
       onError(error.message);
     });
-    return player;
   }
 
   stop() {
@@ -66,6 +69,7 @@ export class SongPlayer {
 
   // As heard now, with positions moved on from the latest chunk to start playing.
   clipStates(): ClipState[] | undefined {
+    if (!this.context || this.stopped) return undefined;
     const now = this.context.currentTime;
     while (this.timeline.length > 1 && this.timeline[1].time <= now) this.timeline.shift();
     const latest = this.timeline[0];
@@ -84,8 +88,9 @@ export class SongPlayer {
   }
 
   private async pump() {
+    const context = this.context!;
     while (!this.stopped) {
-      if (this.nextTime - this.context.currentTime > secondsAhead) {
+      if (this.nextTime - context.currentTime > secondsAhead) {
         await new Promise((resolve) => setTimeout(resolve, 10));
         continue;
       }
@@ -94,20 +99,20 @@ export class SongPlayer {
       if (response.type === "error") throw new Error(response.message);
       if (response.type === "rendered") {
         // If rendering fell behind, carry on from now rather than skip.
-        this.nextTime = Math.max(this.nextTime, this.context.currentTime);
+        this.nextTime = Math.max(this.nextTime, context.currentTime);
         this.timeline.push({ time: this.nextTime, clips: response.clips, framesPerTick: response.framesPerTick });
-        this.schedule(response.left, response.right);
+        this.schedule(context, response.left, response.right);
       }
     }
   }
 
-  private schedule(left: Float32Array<ArrayBuffer>, right: Float32Array<ArrayBuffer>) {
-    const buffer = this.context.createBuffer(2, left.length, sampleRate);
+  private schedule(context: AudioContext, left: Float32Array<ArrayBuffer>, right: Float32Array<ArrayBuffer>) {
+    const buffer = context.createBuffer(2, left.length, sampleRate);
     buffer.copyToChannel(left, 0);
     buffer.copyToChannel(right, 1);
-    const source = this.context.createBufferSource();
+    const source = context.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.context.destination);
+    source.connect(context.destination);
     source.start(this.nextTime);
     this.nextTime += buffer.duration;
     this.sources.add(source);

@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { type Card, baseName, parentPath } from "../card/card";
 import { pathKey } from "../card/references";
 import { isDocument, type SampleIndex } from "../card/sampleIndex";
 import { collectSongFiles, findSample } from "../preview/songFiles";
 import { SongPlayer } from "../preview/songPlayer";
-import { ClipView } from "./ClipView";
+import { ClipSkeleton, ClipView } from "./ClipView";
 import { isAudio, isSong } from "./files";
 import { Oled } from "./Oled";
 import { SamplePreview } from "./SamplePreview";
@@ -154,41 +154,71 @@ function SampleTiles({
   );
 }
 
-type PlaybackState =
-  | { state: "stopped" }
-  | { state: "loading" }
-  | { state: "playing"; player: SongPlayer; context: AudioContext }
-  | { state: "failed"; message: string };
+type Loading = { state: "loading" } | { state: "ready"; player: SongPlayer } | { state: "failed"; message: string };
+
+// Long enough to skip past songs while arrowing through a folder, without loading each one.
+const browseDelay = 250;
 
 function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
   const samples = useSamples(card, path, index);
-  const [playback, setPlayback] = useState<PlaybackState>({ state: "stopped" });
-  const mounted = useRef(true);
+  const [loading, setLoading] = useState<Loading>({ state: "loading" });
+  // The latest song loaded, still shown while it loads again after stopping.
+  const [shown, setShown] = useState<SongPlayer>();
+  const [playing, setPlaying] = useState(false);
+  const [loads, setLoads] = useState(0);
+  const player = loading.state === "ready" ? loading.player : undefined;
 
   useEffect(() => {
-    mounted.current = true;
+    let current = true;
+    let loaded: SongPlayer | undefined;
+    setLoading({ state: "loading" });
+    const timer = setTimeout(
+      async () => {
+        try {
+          const files = await collectSongFiles(card, path);
+          if (!current) return;
+          loaded = await SongPlayer.load(files, path);
+          if (!current) return loaded.stop();
+          setLoading({ state: "ready", player: loaded });
+          setShown(loaded);
+        } catch (e) {
+          if (current) setLoading({ state: "failed", message: errorMessage(e) });
+        }
+      },
+      loads ? 0 : browseDelay,
+    );
     return () => {
-      mounted.current = false;
+      current = false;
+      clearTimeout(timer);
+      loaded?.stop();
     };
-  }, []);
-  useEffect(() => () => (playback.state === "playing" ? playback.player.stop() : undefined), [playback]);
+  }, [card, path, loads]);
 
-  async function play() {
-    setPlayback({ state: "loading" });
-    try {
-      const context = audioContext();
-      await context.resume();
-      const files = await collectSongFiles(card, path);
-      const player = await SongPlayer.play(context, files, path, (message) => setPlayback({ state: "failed", message }));
-      // Moved on to another file while it loaded.
-      if (!mounted.current) return player.stop();
-      setPlayback({ state: "playing", player, context });
-    } catch (e) {
-      setPlayback({ state: "failed", message: e instanceof Error ? e.message : String(e) });
-    }
+  // Play waits for the song to load.
+  useEffect(() => {
+    if (!playing || !player) return;
+    player.start(audioContext(), (message) => {
+      setLoading({ state: "failed", message });
+      setPlaying(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, player]);
+
+  function play() {
+    // Resumed while handling the click, as browsers only allow it then.
+    void audioContext().resume();
+    if (loading.state === "failed") setLoads(loads + 1);
+    setPlaying(true);
   }
 
-  const song = playback.state === "playing" ? playback.player.song : undefined;
+  function stop() {
+    if (!playing) return;
+    setPlaying(false);
+    setLoads(loads + 1);
+  }
+
+  const started = playing ? player : undefined;
+  const song = shown?.song;
   const mode = song && (song.arrangement ? "Arranger" : `Session · ${plural(song.clips.length, "clip")}`);
   return (
     <>
@@ -196,31 +226,36 @@ function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
         <Oled
           title={withoutExtension(path)}
           subtitle={[mode, samplesSummary(samples)].filter(Boolean).join(" · ")}
-          readout={playback.state === "playing" && <Tempo player={playback.player} />}
+          readout={started && <Tempo player={started} />}
         />
         <button
-          className={`pad ${playback.state === "playing" ? "lit" : playback.state === "loading" ? "busy" : ""}`}
+          className={`pad ${started ? "lit" : playing ? "busy" : ""}`}
           aria-label="Play"
-          disabled={playback.state === "loading"}
-          onClick={() => playback.state !== "playing" && play()}
+          onClick={() => !playing && play()}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M7 4l13 8-13 8z" />
           </svg>
         </button>
-        <button className="pad" aria-label="Stop" onClick={() => setPlayback({ state: "stopped" })}>
+        <button className="pad" aria-label="Stop" onClick={stop}>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <rect x="5" y="5" width="14" height="14" />
           </svg>
         </button>
       </div>
-      {playback.state === "failed" && <p className="notice error">{playback.message}</p>}
-      {playback.state === "playing" && (
-        <ClipView card={card} player={playback.player} audioContext={playback.context} />
+      {loading.state === "failed" && <p className="notice error">{loading.message}</p>}
+      {shown ? (
+        <ClipView card={card} player={shown} playing={!!started} audioContext={audioContext()} />
+      ) : (
+        loading.state === "loading" && <ClipSkeleton />
       )}
       <SampleTiles {...samples} onGoTo={onGoTo} />
     </>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function Tempo({ player }: { player: SongPlayer }) {

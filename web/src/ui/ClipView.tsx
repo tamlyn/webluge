@@ -3,10 +3,10 @@ import { baseName, type Card } from "../card/card";
 import type { ClipDescription, ClipState } from "../preview/firmware";
 import type { SongPlayer } from "../preview/songPlayer";
 
-type Props = { card: Card; player: SongPlayer; audioContext: AudioContext };
+type Props = { card: Card; player: SongPlayer; playing: boolean; audioContext: AudioContext };
 
 // The song's session clips, like the Deluge's session view: each can be started, stopped or soloed while it plays.
-export function ClipView({ card, player, audioContext }: Props) {
+export function ClipView({ card, player, playing, audioContext }: Props) {
   const { song } = player;
   const [states, setStates] = useState<ClipState[]>();
   const playHeads = useRef<(HTMLDivElement | null)[]>([]);
@@ -14,14 +14,12 @@ export function ClipView({ card, player, audioContext }: Props) {
   // Play heads move every frame, so they're set directly rather than through React.
   useEffect(() => {
     let frame = requestAnimationFrame(function update() {
-      const now = player.clipStates();
-      if (now) {
-        setStates((previous) => (previous && sameFlags(previous, now) ? previous : now));
-        now.forEach((state, i) => {
-          const head = playHeads.current[i];
-          if (head) head.style.left = `${(100 * state.pos) / song.clips[i].loopLength}%`;
-        });
-      }
+      const now = player.clipStates() ?? player.initialStates;
+      setStates((previous) => (previous && sameFlags(previous, now) ? previous : now));
+      now.forEach((state, i) => {
+        const head = playHeads.current[i];
+        if (head) head.style.left = `${(100 * state.pos) / song.clips[i].loopLength}%`;
+      });
       frame = requestAnimationFrame(update);
     });
     return () => cancelAnimationFrame(frame);
@@ -35,7 +33,9 @@ export function ClipView({ card, player, audioContext }: Props) {
     <>
       <div className="section-head">
         <h3 className="label">Clips</h3>
-        <span className="hint">Pad starts or stops at loop end · Shift + pad does it now</span>
+        <span className="hint">
+          {playing ? "Pad starts or stops at loop end · Shift + pad does it now" : "Play to start and stop clips"}
+        </span>
       </div>
       <ul className="clips">
         {song.clips.map((clip, i) => {
@@ -51,6 +51,7 @@ export function ClipView({ card, player, audioContext }: Props) {
                 className={`launch ${state?.armed ? "armed" : ""}`}
                 aria-label={`${state?.active ? "Stop" : "Start"} ${name}`}
                 title="Start or stop at the end of its loop. Shift-click to do it now."
+                disabled={!playing}
                 onClick={(event: MouseEvent) => player.toggleClip(i, event.shiftKey)}
               />
               <span className="clip-name" title={clip.output}>
@@ -66,12 +67,13 @@ export function ClipView({ card, player, audioContext }: Props) {
                 ) : (
                   <Notes clip={clip} ticksPerQuarterNote={song.ticksPerQuarterNote} />
                 )}
-                <div className="play-head" ref={(head) => void (playHeads.current[i] = head)} hidden={!state?.active} />
+                <div className="play-head" ref={(head) => void (playHeads.current[i] = head)} hidden={!playing || !state?.active} />
               </div>
               <button
                 className={`solo ${state?.soloing ? "on" : ""}`}
                 aria-label={`Solo ${name}`}
                 aria-pressed={!!state?.soloing}
+                disabled={!playing}
                 onClick={() => player.soloClip(i)}
               >
                 S
@@ -79,6 +81,27 @@ export function ClipView({ card, player, audioContext }: Props) {
             </li>
           );
         })}
+      </ul>
+    </>
+  );
+}
+
+// Stands in for the clips while the song loads.
+export function ClipSkeleton() {
+  return (
+    <>
+      <div className="section-head">
+        <h3 className="label">Clips</h3>
+      </div>
+      <ul className="clips" aria-busy="true" aria-label="Loading clips">
+        {Array.from({ length: 4 }, (_, i) => (
+          <li key={i} className="clip skeleton">
+            <span className="launch" />
+            <span className="clip-name" />
+            <div className="lane" />
+            <span className="solo" />
+          </li>
+        ))}
       </ul>
     </>
   );

@@ -31,16 +31,20 @@ export function ConnectCard({ remembered, onConnect }: Props) {
     <main className="connect">
       <h1>Webluge</h1>
       <p>Open your Deluge's SD card, or a copy of it, to browse and play its songs and samples.</p>
+      <p className="warning">
+        Webluge is beta software. Back up your SD card before opening it here, to avoid any risk of losing or
+        corrupting your data.
+      </p>
       <div className="connect-actions">
         {remembered && (
           <button
-            className="primary"
+            className="key primary"
             onClick={() => connect(async () => ((await reconnect(remembered)) ? remembered : undefined))}
           >
             Reopen {remembered.name}
           </button>
         )}
-        <button className={remembered ? "" : "primary"} onClick={() => connect(pickCard)}>
+        <button className={`key ${remembered ? "" : "primary"}`} onClick={() => connect(pickCard)}>
           Open SD card…
         </button>
       </div>
