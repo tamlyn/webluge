@@ -1,7 +1,9 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 import { type Card, type Entry, joinPath, parentPath } from "../card/card";
+import { homeOf, inTrash } from "../card/plan";
 import { pathKey } from "../card/references";
 import type { UsageIndex } from "../card/usageIndex";
+import { type Drop, endDrag, startDrag, useDropTarget } from "./drag";
 import { isAudio, samePath } from "./files";
 import type { Navigate } from "./route";
 import { useAsync } from "./useAsync";
@@ -9,15 +11,28 @@ import { useAsync } from "./useAsync";
 // A file or folder on the card. The card's root is the folder "".
 export type Selection = { path: string; folder: boolean };
 
+export type Choose = (paths: string[], focus: Entry, options?: { replace?: boolean; anchor?: string }) => void;
+
+// Each is undefined when it can't be used on what's chosen.
+export type Tools = { onNewFolder?: () => void; onRename?: () => void; onMoveTo?: () => void };
+
 type Props = {
   card: Card;
   selection: Selection;
+  // The entries chosen in the selection's folder, the selection among them, and the one a Shift-click extends from.
+  chosen: string[];
+  anchor: string;
   index?: UsageIndex;
+  // Changes when the card does, so folders are listed again.
+  version: number;
+  tools: Tools;
   onSelect: Navigate;
+  onChoose: Choose;
+  onDrop: Drop;
 };
 
 // Finder-style columns, one for each folder from the card's root down to the selection.
-export function Browser({ card, selection, index, onSelect }: Props) {
+export function Browser({ card, selection, index, tools, onSelect, ...props }: Props) {
   const [unusedOnly, setUnusedOnly] = useState(false);
   const columns = useRef<HTMLDivElement>(null);
   const folders = foldersShowing(selection);
@@ -36,11 +51,22 @@ export function Browser({ card, selection, index, onSelect }: Props) {
             disabled={!index}
             onChange={(event) => setUnusedOnly(event.target.checked)}
           />
-          Unused samples only
+          Unused samples
         </label>
-        <button className="text-button" disabled={!index} onClick={() => onSelect({ view: "missing" })}>
-          Missing samples
-        </button>
+        <div className="tools">
+          <button className="text-button" disabled={!tools.onNewFolder} onClick={tools.onNewFolder}>
+            New folder
+          </button>
+          <button className="text-button" disabled={!tools.onRename} onClick={tools.onRename}>
+            Rename
+          </button>
+          <button className="text-button" disabled={!tools.onMoveTo} onClick={tools.onMoveTo}>
+            Move to…
+          </button>
+          <button className="text-button" disabled={!index} onClick={() => onSelect({ view: "missing" })}>
+            Missing samples
+          </button>
+        </div>
       </div>
       <div className="columns" ref={columns}>
         {folders.map((folder) => (
@@ -52,6 +78,7 @@ export function Browser({ card, selection, index, onSelect }: Props) {
             index={index}
             unusedOnly={unusedOnly}
             onSelect={onSelect}
+            {...props}
           />
         ))}
       </div>
@@ -65,13 +92,14 @@ function foldersShowing({ path, folder }: Selection): string[] {
   return folder && path ? [...ancestors, path] : ancestors.length ? ancestors : [""];
 }
 
-type ColumnProps = Props & {
+type ColumnProps = Omit<Props, "tools"> & {
   folder: string;
   unusedOnly: boolean;
 };
 
-function Column({ card, folder, selection, index, unusedOnly, onSelect }: ColumnProps) {
-  const listed = useAsync(() => card.list(folder), [card, folder]);
+function Column({ card, folder, selection, chosen, anchor, index, version, unusedOnly, ...props }: ColumnProps) {
+  const { onSelect, onChoose, onDrop } = props;
+  const listed = useAsync(() => card.list(folder), [card, folder, version]);
   const list = useRef<HTMLUListElement>(null);
   const usersOf = (entry: Entry) =>
     index && isAudio(entry.path) ? (index.usersOf.get(pathKey(entry.path))?.length ?? 0) : undefined;
@@ -79,6 +107,8 @@ function Column({ card, folder, selection, index, unusedOnly, onSelect }: Column
   const onPath = childOnPath(folder, selection.path);
   const current = entries?.find((entry) => samePath(entry.path, onPath));
   const holdsSelection = samePath(parentPath(selection.path), folder) && selection.path !== "";
+  const chosenHere = new Set(holdsSelection ? chosen.map(pathKey) : []);
+  const drop = useDropTarget(folder || undefined, onDrop);
 
   useEffect(() => {
     list.current?.querySelector(".selected, .on-path")?.scrollIntoView({ block: "nearest" });
@@ -92,8 +122,31 @@ function Column({ card, folder, selection, index, unusedOnly, onSelect }: Column
     }
   }, [holdsSelection, selection.path]);
 
-  const select = (entry: Entry, replace = false) =>
-    onSelect({ path: entry.path, folder: entry.kind === "folder" }, { replace });
+  const choose = (entry: Entry, replace = false) => onChoose([entry.path], entry, { replace });
+
+  // From the anchor to the entry, if both are in this column.
+  function extendTo(entry: Entry, replace = false) {
+    const from = entries!.findIndex((e) => samePath(e.path, anchor));
+    if (!holdsSelection || from < 0) return choose(entry, replace);
+    const to = entries!.indexOf(entry);
+    const range = entries!.slice(Math.min(from, to), Math.max(from, to) + 1);
+    onChoose(
+      range.map((e) => e.path),
+      entry,
+      { replace, anchor },
+    );
+  }
+
+  function onClick(event: MouseEvent, entry: Entry) {
+    if (event.shiftKey) return extendTo(entry);
+    if (!(event.metaKey || event.ctrlKey) || !holdsSelection) return choose(entry);
+    if (!chosenHere.has(pathKey(entry.path))) {
+      return onChoose([...chosen, entry.path], entry, { anchor: entry.path });
+    }
+    const rest = chosen.filter((path) => !samePath(path, entry.path));
+    const focus = entries!.find((e) => samePath(e.path, rest.at(-1)));
+    if (focus) onChoose(rest, focus, { anchor: focus.path });
+  }
 
   async function onKeyDown(event: KeyboardEvent) {
     if (!entries?.length) return;
@@ -101,12 +154,14 @@ function Column({ card, folder, selection, index, unusedOnly, onSelect }: Column
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
+      const next = entries[i < 0 ? 0 : Math.min(Math.max(i + step, 0), entries.length - 1)];
       // Stepping through a folder would otherwise leave an entry in the history for every file passed.
-      select(entries[i < 0 ? 0 : Math.min(Math.max(i + step, 0), entries.length - 1)], true);
+      if (event.shiftKey) extendTo(next, true);
+      else choose(next, true);
     } else if ((event.key === "ArrowRight" || event.key === "Enter") && current?.kind === "folder") {
       event.preventDefault();
       const first = (await card.list(current.path))[0];
-      if (first) select(first);
+      if (first) choose(first);
     } else if ((event.key === "ArrowLeft" || event.key === "Backspace") && folder) {
       event.preventDefault();
       onSelect({ path: folder, folder: true });
@@ -115,28 +170,73 @@ function Column({ card, folder, selection, index, unusedOnly, onSelect }: Column
 
   const hasAudio = entries?.some((entry) => isAudio(entry.path));
   return (
-    <div className={`column ${hasAudio ? "has-audio" : ""}`}>
+    <div className={`column ${hasAudio ? "has-audio" : ""} ${drop.over ? "drop-target" : ""}`} {...drop.handlers}>
       <h2 className="label">{folder ? folder.slice(folder.lastIndexOf("/") + 1) : card.name}</h2>
       <ul className="entries" tabIndex={0} ref={list} onKeyDown={onKeyDown}>
-        {entries?.map((entry) => {
-          const users = usersOf(entry);
-          const state = entry !== current ? "" : samePath(entry.path, selection.path) ? "selected" : "on-path";
-          return (
-            <li key={entry.path} className={`${entry.kind} ${state}`} onClick={() => select(entry)}>
-              {!folder && entry.kind === "folder" && <span className="led" />}
-              <span className="name">{entry.name}</span>
-              {users !== undefined && <UsageMeter users={users} />}
-              {entry.kind === "folder" && (
-                <svg className="chevron" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M9 6l6 6-6 6" />
-                </svg>
-              )}
-            </li>
-          );
-        })}
+        {entries?.map((entry) => (
+          <EntryRow
+            key={entry.path}
+            entry={entry}
+            atRoot={!folder}
+            state={
+              entry === current
+                ? samePath(entry.path, selection.path)
+                  ? "selected"
+                  : "on-path"
+                : chosenHere.has(pathKey(entry.path))
+                  ? "chosen"
+                  : ""
+            }
+            users={usersOf(entry)}
+            dragging={chosenHere.has(pathKey(entry.path)) ? chosen : [entry.path]}
+            onClick={(event) => onClick(event, entry)}
+            onDrop={onDrop}
+          />
+        ))}
         {entries?.length === 0 && <li className="empty">{unusedOnly ? "No unused samples" : "Empty folder"}</li>}
       </ul>
     </div>
+  );
+}
+
+function EntryRow({
+  entry,
+  atRoot,
+  state,
+  users,
+  dragging,
+  onClick,
+  onDrop,
+}: {
+  entry: Entry;
+  atRoot: boolean;
+  state: string;
+  users?: number;
+  // What dragging it drags: everything chosen, if it's among them.
+  dragging: string[];
+  onClick: (event: MouseEvent) => void;
+  onDrop: Drop;
+}) {
+  const drop = useDropTarget(entry.kind === "folder" ? entry.path : undefined, onDrop);
+  const movable = homeOf(entry.path) !== undefined && !inTrash(entry.path);
+  return (
+    <li
+      className={`${entry.kind} ${state} ${drop.over ? "drop-target" : ""}`}
+      draggable={movable}
+      onDragStart={(event) => startDrag(event, dragging)}
+      onDragEnd={endDrag}
+      onClick={onClick}
+      {...drop.handlers}
+    >
+      {atRoot && entry.kind === "folder" && <span className="led" />}
+      <span className="name">{entry.name}</span>
+      {users !== undefined && <UsageMeter users={users} />}
+      {entry.kind === "folder" && (
+        <svg className="chevron" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      )}
+    </li>
   );
 }
 

@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { Card } from "./card";
 import { memoryFolder, type MemoryFiles, snapshot } from "./memoryFolder";
-import { inverse, needsConfirmation, type Plan, planDelete, PlanError, planMoves, planNewFolder } from "./plan";
+import {
+  canMoveInto,
+  followMove,
+  inverse,
+  needsConfirmation,
+  type Plan,
+  planDelete,
+  PlanError,
+  planMoves,
+  planNewFolder,
+} from "./plan";
 import { run, RunStopped } from "./run";
 import { refreshIndex } from "./usageIndex";
 
@@ -153,6 +163,31 @@ describe("planMoves", () => {
     await refuses("SAMPLES/DRUMS", "SAMPLES/DRUMS/Inside");
     await refuses("SAMPLES", "SONGS/SAMPLES");
     await refuses("SAMPLES/Missing.wav", "SAMPLES/Found.wav");
+  });
+});
+
+describe("canMoveInto", () => {
+  it("allows moves elsewhere within an entry's own top folder", () => {
+    expect(canMoveInto(["SAMPLES/DRUMS/Kick.wav", "SAMPLES/Unused.wav"], "SAMPLES/Vox")).toBe(true);
+    expect(canMoveInto(["SAMPLES/DRUMS/Kick.wav"], "SAMPLES")).toBe(true);
+    expect(canMoveInto(["SAMPLES/DRUMS/Kick.wav"], "samples/drums")).toBe(false);
+    expect(canMoveInto(["SAMPLES/DRUMS"], "SAMPLES/DRUMS/Old")).toBe(false);
+    expect(canMoveInto(["SAMPLES/DRUMS"], "SAMPLES/DRUMS")).toBe(false);
+    expect(canMoveInto(["SAMPLES/Unused.wav"], "SONGS")).toBe(false);
+    expect(canMoveInto(["SAMPLES"], "SONGS")).toBe(false);
+    expect(canMoveInto(["SAMPLES/Unused.wav"], "TRASH/SAMPLES")).toBe(false);
+    expect(canMoveInto([], "SAMPLES")).toBe(false);
+  });
+});
+
+describe("followMove", () => {
+  it("follows entries and what's in them, there and back", async () => {
+    const { context } = await setup();
+    const plan = await planMoves(context, [{ from: "SONGS/Collected.XML", to: "SONGS/Archive/Kept.XML" }]);
+    expect(followMove(plan, "SONGS/Collected.XML")).toBe("SONGS/Archive/Kept.XML");
+    expect(followMove(plan, "SONGS/Collected/DRUMS_Gone.wav")).toBe("SONGS/Archive/Kept/DRUMS_Gone.wav");
+    expect(followMove(plan, "SONGS/Song A.XML")).toBe("SONGS/Song A.XML");
+    expect(followMove(inverse(plan), "SONGS/Archive/Kept/DRUMS_Gone.wav")).toBe("SONGS/Collected/DRUMS_Gone.wav");
   });
 });
 

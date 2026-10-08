@@ -286,8 +286,15 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.browser-tools .text-button {
+.tools {
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 16px;
+}
+
+.tools .text-button {
   font-size: 12px;
   letter-spacing: 0.06em;
 }
@@ -356,9 +363,19 @@ button:disabled {
 }
 
 .entries li.on-path,
-.entries li.selected {
+.entries li.selected,
+.entries li.chosen {
   background: var(--selected);
   color: var(--bright);
+}
+
+/* Where dragged entries would go. */
+.column.drop-target,
+.entries li.drop-target,
+.path button.drop-target {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--hover);
 }
 
 .entries:focus-visible li.selected {
@@ -884,4 +901,101 @@ button.link:hover {
     grid-column: 1 / -1;
     grid-row: 2;
   }
+}
+
+/* Dialogs */
+
+.dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 20px 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 60%);
+}
+
+.dialog h2 {
+  margin-bottom: 14px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dialog-note {
+  min-height: 1.45em;
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.dialog-lines {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--soft);
+}
+
+.name-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--oled);
+  color: var(--bright);
+  font: inherit;
+}
+
+.picker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.picker-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--soft);
+  font-size: 12px;
+}
+
+.picker {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.picker button {
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: var(--soft);
+}
+
+.picker button:hover {
+  background: var(--hover);
+  color: var(--bright);
+}
+
+.picker .empty {
+  padding: 6px 12px;
+  color: var(--dim);
 }

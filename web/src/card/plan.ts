@@ -18,6 +18,8 @@ export type Plan = {
   newFolders: string[];
   moves: Move[];
   oldFolders: string[];
+  // The files and folders chosen to move, whole, for the app to follow.
+  entries: Move[];
   // What it does beyond what was chosen, for the user to confirm: the collected-samples folders going with their
   // songs, kits and synths, and the documents that will lose samples going to the trash.
   companions: Move[];
@@ -27,7 +29,7 @@ export type Plan = {
 export class PlanError extends Error {}
 
 export function emptyPlan(): Plan {
-  return { rewrites: [], newFolders: [], moves: [], oldFolders: [], companions: [], broken: [] };
+  return { rewrites: [], newFolders: [], moves: [], oldFolders: [], entries: [], companions: [], broken: [] };
 }
 
 export function needsConfirmation(plan: Plan): boolean {
@@ -42,7 +44,7 @@ export const trash = "TRASH";
 const homes = ["SONGS", "KITS", "SYNTHS", "SAMPLES"];
 
 // The top folder an entry belongs in, whether it's in the trash or not. Undefined for the top folders themselves.
-function homeOf(path: string): string | undefined {
+export function homeOf(path: string): string | undefined {
   const parts = path.split("/");
   if (parts[0].toUpperCase() === trash) parts.shift();
   const home = parts[0].toUpperCase();
@@ -118,6 +120,7 @@ export async function planMoves({ card, index }: Context, chosen: Move[]): Promi
     (move) => !same(move.from, move.to) && !chosen.some((other) => within(move.from, other.from)),
   );
 
+  plan.entries = entries;
   for (const { from, to } of entries) {
     const home = homeOf(from);
     if (!home || homeOf(to) !== home) {
@@ -314,6 +317,35 @@ function relinkPresets(text: string, move: Move): Edit[] {
   return edits;
 }
 
+// Whether entries could move into a folder, by the rules that need nothing read from the card: somewhere else in their
+// own top folder, and not inside themselves. The planner checks the rest.
+export function canMoveInto(paths: string[], folder: string): boolean {
+  return (
+    paths.length > 0 &&
+    paths.every((path) => {
+      const home = homeOf(path);
+      return (
+        home !== undefined &&
+        !inTrash(path) &&
+        homeOf(joinPath(folder, "_")) === home &&
+        !inTrash(folder) &&
+        !same(parentPath(path), folder) &&
+        !same(path, folder) &&
+        !within(folder, path)
+      );
+    })
+  );
+}
+
+// Where an entry is after a plan has run: moved itself, or with the folder it's in, or where it was.
+export function followMove(plan: Plan, path: string): string {
+  for (const { from, to } of [...plan.entries, ...plan.companions]) {
+    if (same(from, path)) return to;
+    if (within(path, from)) return to + path.slice(from.length);
+  }
+  return path;
+}
+
 // Puts back what a plan did, including only part of one if its run stopped.
 export function inverse(plan: Plan): Plan {
   const movedTo = new Map(plan.moves.map((move) => [pathKey(move.from), move.to]));
@@ -326,6 +358,7 @@ export function inverse(plan: Plan): Plan {
     newFolders: [...plan.oldFolders].reverse(),
     moves: plan.moves.map(({ from, to }) => ({ from: to, to: from })).reverse(),
     oldFolders: [...plan.newFolders].reverse(),
+    entries: [...plan.entries, ...plan.companions].map(({ from, to }) => ({ from: to, to: from })),
     companions: [],
     broken: [],
   };

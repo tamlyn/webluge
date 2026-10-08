@@ -1,15 +1,18 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Card } from "./card/card";
 import { rememberedCard } from "./card/connect";
-import { planRelinks } from "./card/plan";
+import { followMove, planRelinks } from "./card/plan";
 import { refreshIndex, type UsageIndex } from "./card/usageIndex";
 import { sampleRate } from "./preview/firmware";
 import { Browser, type Selection } from "./ui/Browser";
 import { ConnectCard } from "./ui/ConnectCard";
 import { Details } from "./ui/Details";
 import { MissingSamples } from "./ui/MissingSamples";
-import { useRoute } from "./ui/route";
+import { type Drop, useDropTarget } from "./ui/drag";
+import { samePath } from "./ui/files";
+import { routeOf, useRoute } from "./ui/route";
 import { useOperations } from "./ui/useOperations";
+import { useOrganise } from "./ui/useOrganise";
 
 const root: Selection = { path: "", folder: true };
 
@@ -31,9 +34,18 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
   const [index, setIndex] = useState<UsageIndex>();
   const [indexProgress, setIndexProgress] = useState<string>();
   const [route, navigate] = useRoute();
+  // Entries chosen alongside the selection, in its folder, and the one a Shift-click extends from.
+  const [choice, setChoice] = useState<{ paths: string[]; anchor: string }>();
+  // Counts changes to the card, so the browser lists folders again.
+  const [version, setVersion] = useState(0);
   const audioContext = useRef<AudioContext>(undefined);
   // The latest index, for refreshing from, however recently it was set.
   const latest = useRef<UsageIndex>(undefined);
+
+  const selection = "view" in route ? root : route;
+  // Whatever moved in a run, the selection and choice go with it.
+  const current = useRef(selection);
+  current.current = selection;
 
   async function refresh(): Promise<UsageIndex> {
     try {
@@ -49,14 +61,37 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
       throw error;
     }
   }
-  const operations = useOperations(card, refresh);
+  const operations = useOperations(card, refresh, (done) => {
+    setVersion((version) => version + 1);
+    const { path, folder } = current.current;
+    const moved = followMove(done, path);
+    if (moved !== path && !("view" in routeOf(location.hash))) navigate({ path: moved, folder }, { replace: true });
+    setChoice(
+      (choice) =>
+        choice && { paths: choice.paths.map((path) => followMove(done, path)), anchor: followMove(done, choice.anchor) },
+    );
+  });
 
   useEffect(() => {
     refresh().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selection = "view" in route ? root : route;
+  const chosen =
+    choice && choice.paths.some((path) => samePath(path, selection.path))
+      ? choice.paths
+      : selection.path
+        ? [selection.path]
+        : [];
+  const anchor = chosen === choice?.paths ? choice.anchor : selection.path;
+  const organise = useOrganise({
+    card,
+    operations,
+    selection: "view" in route ? undefined : selection,
+    chosen,
+    navigate,
+  });
+
   const parts = selection.path ? selection.path.split("/") : [];
   const status = operations.status;
   return (
@@ -73,24 +108,26 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
               <button onClick={() => navigate({ view: "missing" })}>Missing samples</button>
             </>
           )}
-          {parts.map((part, i) => (
-            <Fragment key={i}>
-              <span aria-hidden="true">/</span>
-              <button
-                title={part}
-                onClick={() =>
-                  navigate({ path: parts.slice(0, i + 1).join("/"), folder: i < parts.length - 1 || selection.folder })
-                }
-              >
-                {part}
-              </button>
-            </Fragment>
-          ))}
+          {parts.map((part, i) => {
+            const path = parts.slice(0, i + 1).join("/");
+            const folder = i < parts.length - 1 || selection.folder;
+            return (
+              <Fragment key={i}>
+                <span aria-hidden="true">/</span>
+                <Crumb
+                  name={part}
+                  folder={folder ? path : undefined}
+                  onClick={() => navigate({ path, folder })}
+                  onDrop={organise.onDrop}
+                />
+              </Fragment>
+            );
+          })}
         </nav>
         <div className="card-name">
           {indexProgress && <span>{indexProgress}</span>}
           {status && (
-            <span className={`status ${status.state === "failed" ? "error" : ""}`} role="status">
+            <span className={`status ${status.state === "failed" ? "error" : ""}`} role="status" title={status.message}>
               {status.message}
             </span>
           )}
@@ -101,7 +138,7 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
           )}
           <button
             className="key"
-            disabled={operations.running}
+            disabled={operations.busy}
             onClick={() => {
               onEject();
               navigate(root);
@@ -112,18 +149,36 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
         </div>
       </header>
       <div className="body">
-        <Browser card={card} selection={selection} index={index} onSelect={navigate} />
+        <Browser
+          card={card}
+          selection={selection}
+          chosen={chosen}
+          anchor={anchor}
+          index={index}
+          version={version}
+          tools={organise.tools}
+          onSelect={navigate}
+          onChoose={(paths, focus, { replace, anchor } = {}) => {
+            setChoice({ paths, anchor: anchor ?? focus.path });
+            navigate({ path: focus.path, folder: focus.kind === "folder" }, { replace });
+          }}
+          onDrop={organise.onDrop}
+        />
         {"view" in route ? (
           <MissingSamples
             card={card}
             index={index}
-            busy={operations.running}
+            busy={operations.busy}
             onRelink={(message, relinks) => operations.perform(message, (context) => planRelinks(context, relinks))}
             onGoTo={(path) => navigate({ path, folder: false })}
           />
         ) : operations.running ? (
           // Songs only ever load from a settled card.
           <section className="details empty">Changing the card…</section>
+        ) : chosen.length > 1 ? (
+          <section className="details empty">
+            {chosen.length} chosen. Drag them onto a folder, or use Move to…
+          </section>
         ) : selection.folder ? (
           <section className="details empty">Pick a song or sample. The arrow keys move through the columns.</section>
         ) : (
@@ -137,6 +192,27 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
           />
         )}
       </div>
+      {organise.dialog}
     </div>
+  );
+}
+
+// A folder in the path, which entries can be dragged onto.
+function Crumb({
+  name,
+  folder,
+  onClick,
+  onDrop,
+}: {
+  name: string;
+  folder?: string;
+  onClick: () => void;
+  onDrop: Drop;
+}) {
+  const drop = useDropTarget(folder, onDrop);
+  return (
+    <button title={name} className={drop.over ? "drop-target" : ""} onClick={onClick} {...drop.handlers}>
+      {name}
+    </button>
   );
 }
