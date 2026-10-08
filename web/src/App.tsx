@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Card } from "./card/card";
 import { rememberedCard } from "./card/connect";
 import { buildSampleIndex, type SampleIndex } from "./card/sampleIndex";
@@ -54,18 +54,21 @@ export function App() {
       <header className="top">
         <h1>Webluge</h1>
         <nav className="path" aria-label="Path">
-          <button onClick={() => navigate(root)}>{card.name}</button>
+          <button onClick={() => navigate(root)} title={card.name}>
+            {card.name}
+          </button>
           {parts.map((part, i) => (
-            <span key={i}>
-              {"/ "}
+            <Fragment key={i}>
+              <span aria-hidden="true">/</span>
               <button
+                title={part}
                 onClick={() =>
                   navigate({ path: parts.slice(0, i + 1).join("/"), folder: i < parts.length - 1 || selection.folder })
                 }
               >
                 {part}
               </button>
-            </span>
+            </Fragment>
           ))}
         </nav>
         <div className="card-name">

@@ -16,7 +16,7 @@ export function Oled({
     <div className="oled">
       <div className="oled-head">
         <div>
-          <h2>{title}</h2>
+          <h2 title={title}>{title}</h2>
           {subtitle && <p className="label">{subtitle}</p>}
         </div>
         {readout && <div className="readout">{readout}</div>}

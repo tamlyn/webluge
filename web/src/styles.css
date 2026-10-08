@@ -187,7 +187,6 @@ button:disabled {
 
 .top {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px 28px;
   padding: 12px 24px;
@@ -202,9 +201,14 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.top h1 {
+  flex: none;
+}
+
 .path {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -213,12 +217,24 @@ button:disabled {
 }
 
 .path button {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border: 0;
   background: none;
   padding: 0;
   color: var(--soft);
   text-transform: uppercase;
+  text-align: left;
   letter-spacing: inherit;
+}
+
+/* The selection gives way first, so the folders above it stay readable. */
+.path button:last-child {
+  flex-shrink: 1000;
+  min-width: 12ch;
 }
 
 .path button:hover,
@@ -227,6 +243,7 @@ button:disabled {
 }
 
 .card-name {
+  flex: none;
   margin-left: auto;
   display: flex;
   align-items: center;
@@ -449,12 +466,19 @@ button:disabled {
   gap: 16px;
 }
 
+.oled-head > div {
+  min-width: 0;
+}
+
 .oled h2 {
   font-size: 22px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 .oled p {
@@ -462,6 +486,7 @@ button:disabled {
 }
 
 .readout {
+  flex: none;
   text-align: right;
   font-size: 22px;
 }
@@ -754,6 +779,13 @@ button.link:hover {
 }
 
 @media (max-width: 800px) {
+  .top {
+    flex-wrap: wrap;
+  }
+  .path {
+    order: 1;
+    flex-basis: 100%;
+  }
   .body {
     flex-direction: column;
   }
