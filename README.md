@@ -35,3 +35,7 @@ mise exec -- npm test
 ## Firmware
 
 `DelugeFirmware` is a submodule pointing at [a fork](https://github.com/tamlyn/DelugeFirmware), pinned to release 1.2.1 plus a few small changes. [UPSTREAM.md](UPSTREAM.md) explains how those are kept and how to move to a new release. [ARM_AUDIT.md](ARM_AUDIT.md) lists the ARM-specific code and how each piece runs on the host.
+
+## Licence
+
+[GPL-3.0](LICENSE), the same as the Deluge firmware.
