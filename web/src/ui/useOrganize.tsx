@@ -19,7 +19,7 @@ import { documentsSummary, plural } from "./words";
 
 // Moving, renaming, deleting and making folders, from the browser's toolbar, keys and dragging, each one plan through
 // the operations.
-export function useOrganise({
+export function useOrganize({
   card,
   operations,
   selection,

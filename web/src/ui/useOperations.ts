@@ -30,7 +30,11 @@ export type Operations = {
 };
 
 // After each run, with what it did, so the app can follow what moved.
-export function useOperations(card: Card, refresh: () => Promise<UsageIndex>, onRun: (done: Plan) => void): Operations {
+export function useOperations(
+  card: Card,
+  refresh: (rewritten?: string[]) => Promise<UsageIndex>,
+  onRun: (done: Plan) => void,
+): Operations {
   const [status, setStatus] = useState<Status>();
   const [history, setHistory] = useState<Done[]>([]);
   const busy = status?.state === "planning" || status?.state === "running";
@@ -90,7 +94,8 @@ export function useOperations(card: Card, refresh: () => Promise<UsageIndex>, on
       setHistory((history) => [...history, { message: `${message} (stopped partway)`, undo: inverse(error.done) }]);
       return "partly";
     } finally {
-      await refresh();
+      // By their paths before the moves: a document that moved is new to the index anyway.
+      await refresh(plan.rewrites.map((rewrite) => rewrite.path));
     }
   }
 

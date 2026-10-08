@@ -1,8 +1,9 @@
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
-import { type Card, type Entry, joinPath, parentPath } from "../card/card";
+import { baseName, type Card, type Entry, joinPath, parentPath } from "../card/card";
 import { homeOf } from "../card/plan";
 import { pathKey } from "../card/references";
 import type { UsageIndex } from "../card/usageIndex";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { type Drop, endDrag, startDrag, useDropTarget } from "./drag";
 import { isAudio, samePath } from "./files";
 import type { Navigate } from "./route";
@@ -73,21 +74,36 @@ export function Browser({ card, selection, index, tools, onSelect, ...props }: P
       </div>
       <div className="columns" ref={columns}>
         {folders.map((folder) => (
-          <Column
+          <ErrorBoundary
             key={folder}
-            card={card}
-            folder={folder}
-            selection={selection}
-            index={index}
-            unusedOnly={unusedOnly}
-            onSelect={onSelect}
-            onDelete={tools.onDelete}
-            {...props}
-          />
+            fallback={(error) => (
+              <div className="column">
+                <h2 className="label">{folderName(card, folder)}</h2>
+                <ul className="entries">
+                  <li className="empty error">Couldn't list this folder: {String(error)}</li>
+                </ul>
+              </div>
+            )}
+          >
+            <Column
+              card={card}
+              folder={folder}
+              selection={selection}
+              index={index}
+              unusedOnly={unusedOnly}
+              onSelect={onSelect}
+              onDelete={tools.onDelete}
+              {...props}
+            />
+          </ErrorBoundary>
         ))}
       </div>
     </section>
   );
+}
+
+function folderName(card: Card, folder: string): string {
+  return folder ? baseName(folder) : card.name;
 }
 
 function foldersShowing({ path, folder }: Selection): string[] {
@@ -115,9 +131,10 @@ function Column({ card, folder, selection, chosen, anchor, index, version, unuse
   const chosenHere = new Set(holdsSelection ? chosen.map(pathKey) : []);
   const drop = useDropTarget(folder || undefined, onDrop);
 
+  // Only when what's shown changes, not on every render, which would fight the user's scrolling.
   useEffect(() => {
     list.current?.querySelector(".selected, .on-path")?.scrollIntoView({ block: "nearest" });
-  }, [onPath, entries]);
+  }, [onPath, listed, unusedOnly]);
 
   // Keys move through the columns, so focus follows the selection once the columns have it.
   useEffect(() => {
@@ -181,7 +198,7 @@ function Column({ card, folder, selection, chosen, anchor, index, version, unuse
   const hasAudio = entries?.some((entry) => isAudio(entry.path));
   return (
     <div className={`column ${hasAudio ? "has-audio" : ""} ${drop.over ? "drop-target" : ""}`} {...drop.handlers}>
-      <h2 className="label">{folder ? folder.slice(folder.lastIndexOf("/") + 1) : card.name}</h2>
+      <h2 className="label">{folderName(card, folder)}</h2>
       <ul className="entries" tabIndex={0} ref={list} onKeyDown={onKeyDown}>
         {entries?.map((entry) => (
           <EntryRow

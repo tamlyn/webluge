@@ -19,10 +19,19 @@ type Props = {
 export function MissingSamples({ card, index, busy, onRelink, onGoTo }: Props) {
   // The previous list stays up while the card is looked through again after a change.
   const [missing, setMissing] = useState<Missing>();
+  // Until the next index, which tries again.
+  const [failed, setFailed] = useState<unknown>();
   useEffect(() => {
     if (!index) return;
     let current = true;
-    findMissing(card, index).then((found) => current && setMissing(found));
+    findMissing(card, index).then(
+      (found) => {
+        if (!current) return;
+        setMissing(found);
+        setFailed(undefined);
+      },
+      (error) => current && setFailed(error),
+    );
     return () => {
       current = false;
     };
@@ -31,11 +40,13 @@ export function MissingSamples({ card, index, busy, onRelink, onGoTo }: Props) {
   const users = missing && [...new Set(missing.samples.flatMap((sample) => sample.users))];
   const subtitle = !index
     ? "Indexing…"
-    : !missing || !users
-      ? "Looking through the card…"
-      : missing.samples.length
-        ? `${plural(missing.samples.length, "sample")} · ${documentsSummary(users)}`
-        : "None";
+    : failed
+      ? `Couldn't look through the card: ${failed}`
+      : !missing || !users
+        ? "Looking through the card…"
+        : missing.samples.length
+          ? `${plural(missing.samples.length, "sample")} · ${documentsSummary(users)}`
+          : "None";
   return (
     <section className="details">
       <Oled title="Missing samples" subtitle={subtitle} />

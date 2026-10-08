@@ -93,7 +93,11 @@ export async function planDelete(context: Context, paths: string[]): Promise<Pla
   const taken = new Set<string>();
   const free = async (path: string) => !taken.has(pathKey(path)) && !(await context.card.kind(path));
   const chosen: Move[] = [];
+  // Chosen along with their song, kit or synth, collected samples go with it, numbered the same, so it finds them again
+  // once restored.
+  const companions = paths.map(companionOf).filter((companion) => companion !== undefined);
   for (const path of paths) {
+    if (companions.some((companion) => same(path, companion) || within(path, companion))) continue;
     if (inTrash(path)) throw new PlanError(`${baseName(path)} is already in the trash`);
     const kind = await context.card.kind(path);
     if (!kind) throw new PlanError(`${baseName(path)} isn't on the card`);

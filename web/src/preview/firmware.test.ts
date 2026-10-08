@@ -48,6 +48,16 @@ describe("Firmware", () => {
     expect(peak(left)).toBeLessThanOrEqual(1);
   });
 
+  it("loads files whose folders are spelt in different cases", async () => {
+    const files = (await readCard(card)).map((file) =>
+      file.path.includes("Snare") ? { ...file, path: file.path.replace("SAMPLES/DRUMS", "samples/drums") } : file,
+    );
+    const kick = files.find((file) => file.path.includes("Kick"))!;
+    files.push({ ...kick, path: kick.path.toUpperCase() });
+    const firmware = await Firmware.loadSong(files, songPath, () => {});
+    expect(firmware.numMissing).toBe(0);
+  });
+
   it("describes the song's clips", async () => {
     const { song } = await load();
     expect(song.arrangement).toBe(false);

@@ -19,6 +19,8 @@ export class Player {
   private sources = new Set<AudioBufferSourceNode>();
   private stopped = false;
   private pending?: (response: Response) => void;
+  // Once the worker itself has failed, it won't answer again.
+  private failure?: Response;
   // Clip states as each scheduled chunk starts, oldest first.
   private timeline: Timeline[] = [];
 
@@ -36,6 +38,7 @@ export class Player {
     const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     const loaded = await new Promise<Response>((resolve) => {
       worker.onmessage = ({ data }: MessageEvent<Response>) => resolve(data);
+      worker.onerror = (event) => resolve(workerFailed(event));
       post(worker, { type: "load", files, path, preset }, files.map((f) => f.data.buffer as ArrayBuffer));
     });
     if (loaded.type !== "loaded") {
@@ -44,6 +47,10 @@ export class Player {
     }
     const player = new Player(worker, pacing[preset ? "preset" : "song"], loaded.numMissing, loaded.song, loaded.clips);
     worker.onmessage = ({ data }: MessageEvent<Response>) => player.pending?.(data);
+    worker.onerror = (event) => {
+      player.failure = workerFailed(event);
+      player.pending?.(player.failure);
+    };
     return player;
   }
 
@@ -130,11 +137,17 @@ export class Player {
   }
 
   private request(request: Request): Promise<Response> {
+    if (this.failure) return Promise.resolve(this.failure);
     return new Promise((resolve) => {
       this.pending = resolve;
       post(this.worker, request);
     });
   }
+}
+
+// Outside a request, as when the worker's script or the firmware can't be fetched. The event carries no message then.
+function workerFailed(event: ErrorEvent): Response {
+  return { type: "error", message: event.message || "The player stopped working" };
 }
 
 function post(worker: Worker, request: Request, transfer: Transferable[] = []) {

@@ -40,12 +40,15 @@ export async function findSample(card: Card, document: string, sample: string): 
   return alternate && (await card.exists(alternate)) ? alternate : undefined;
 }
 
-// Rereads only the documents that are new or changed since the previous index.
+// Rereads only the documents that are new or changed since the previous index, and those known to have been rewritten:
+// FAT keeps modification times to 2 seconds, so a document rewritten to the same size soon after can look unchanged.
 export async function refreshIndex(
   card: Card,
   previous: UsageIndex | undefined,
   onProgress: (done: number, total: number) => void,
+  rewritten: string[] = [],
 ): Promise<UsageIndex> {
+  const stale = new Set(rewritten.map(pathKey));
   const files: File[] = [];
   const paths: string[] = [];
   for (const folder of documentFolders) {
@@ -60,7 +63,7 @@ export async function refreshIndex(
   const documents = new Map<string, IndexedDocument>();
   const changed: number[] = [];
   for (const [i, path] of paths.entries()) {
-    const known = previous?.documents.get(pathKey(path));
+    const known = stale.has(pathKey(path)) ? undefined : previous?.documents.get(pathKey(path));
     if (known?.stamp === stampOf(files[i])) documents.set(pathKey(path), { ...known, path });
     else changed.push(i);
   }

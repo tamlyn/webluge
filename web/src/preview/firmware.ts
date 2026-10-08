@@ -44,6 +44,22 @@ export function bpm(framesPerTick: number, ticksPerQuarterNote: number): number 
 
 const cardFolder = "/card";
 
+// Songs can spell a folder or file in different cases, which the card doesn't mind but MEMFS does: copied in as
+// spelt, one would be two, and the card image can't hold both. Each is spelt as it was first.
+function oneSpelling(): (path: string) => string {
+  const spellings = new Map<string, string>();
+  return function spell(path: string): string {
+    const key = path.toLowerCase();
+    let spelt = spellings.get(key);
+    if (!spelt) {
+      const slash = path.lastIndexOf("/");
+      spelt = slash < 0 ? path : `${spell(path.slice(0, slash))}${path.slice(slash)}`;
+      spellings.set(key, spelt);
+    }
+    return spelt;
+  };
+}
+
 export class Firmware {
   readonly song: SongDescription;
 
@@ -79,17 +95,21 @@ export class Firmware {
     log?: (text: string) => void,
   ): Promise<{ module: Webluge; numMissing: number }> {
     const module = await createWebluge(log && { print: log, printErr: log });
+    const spell = oneSpelling();
+    const written = new Set<string>();
     const folders = new Set<string>();
     for (const { path, data } of files) {
-      const folder = `${cardFolder}/${path}`.replace(/\/[^/]*$/, "");
+      const file = `${cardFolder}/${spell(path)}`;
+      const folder = file.replace(/\/[^/]*$/, "");
       module.FS.mkdirTree(folder);
-      module.FS.writeFile(`${cardFolder}/${path}`, data);
+      module.FS.writeFile(file, data);
+      written.add(file);
       for (let f = folder; f !== cardFolder; f = f.replace(/\/[^/]*$/, "")) folders.add(f);
     }
     const numMissing = module.ccall(entry, "number", ["string", "string"], [cardFolder, path]);
     if (numMissing < 0) throw new Error(`Couldn't load ${path}`);
     // The card image has its own copy now.
-    for (const file of files) module.FS.unlink(`${cardFolder}/${file.path}`);
+    for (const file of written) module.FS.unlink(file);
     for (const folder of [...folders].sort().reverse()) module.FS.rmdir(folder);
     return { module, numMissing };
   }

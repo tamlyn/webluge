@@ -1,6 +1,7 @@
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { type Card, baseName, parentPath } from "../card/card";
 import { canMoveInto, homeOf, inTrash, nameProblem } from "../card/plan";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { useAsync } from "./useAsync";
 
 // A modal dialog, as the browser draws one: focus stays inside it, and Escape cancels.
@@ -121,10 +122,6 @@ export function MoveToDialog({
 }) {
   const home = homeOf(paths[0])!;
   const [folder, setFolder] = useState(inTrash(paths[0]) ? home : parentPath(paths[0]));
-  const folders = useAsync(
-    async () => (await card.list(folder)).filter((entry) => entry.kind === "folder"),
-    [card, folder],
-  );
   const title = paths.length === 1 ? `Move ${baseName(paths[0])}` : `Move ${paths.length} items`;
   return (
     <Dialog title={title} onCancel={onCancel}>
@@ -143,17 +140,34 @@ export function MoveToDialog({
           </span>
         </div>
         <ul className="picker">
-          {folders?.map((entry) => (
-            <li key={entry.path}>
-              <button type="button" onClick={() => setFolder(entry.path)}>
-                {entry.name}
-              </button>
-            </li>
-          ))}
-          {folders?.length === 0 && <li className="empty">No folders</li>}
+          <ErrorBoundary
+            key={folder}
+            fallback={(error) => <li className="empty error">Couldn't list this folder: {String(error)}</li>}
+          >
+            <Subfolders card={card} folder={folder} onOpen={setFolder} />
+          </ErrorBoundary>
         </ul>
         <Buttons action="Move here" disabled={!canMoveInto(paths, folder)} onCancel={onCancel} />
       </form>
     </Dialog>
+  );
+}
+
+function Subfolders({ card, folder, onOpen }: { card: Card; folder: string; onOpen: (folder: string) => void }) {
+  const folders = useAsync(
+    async () => (await card.list(folder)).filter((entry) => entry.kind === "folder"),
+    [card, folder],
+  );
+  return (
+    <>
+      {folders?.map((entry) => (
+        <li key={entry.path}>
+          <button type="button" onClick={() => onOpen(entry.path)}>
+            {entry.name}
+          </button>
+        </li>
+      ))}
+      {folders?.length === 0 && <li className="empty">No folders</li>}
+    </>
   );
 }

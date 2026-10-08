@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Card, parentPath } from "./card/card";
 import { rememberedCard } from "./card/connect";
 import { followMove, inTrash, planRelinks } from "./card/plan";
@@ -13,7 +13,7 @@ import { type Drop, useDropTarget } from "./ui/drag";
 import { samePath } from "./ui/files";
 import { routeOf, useRoute } from "./ui/route";
 import { useOperations } from "./ui/useOperations";
-import { useOrganise } from "./ui/useOrganise";
+import { useOrganize } from "./ui/useOrganize";
 
 const root: Selection = { path: "", folder: true };
 
@@ -39,7 +39,9 @@ function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
   const [choice, setChoice] = useState<{ paths: string[]; anchor: string }>();
   // Counts changes to the card, so the browser lists folders again.
   const [version, setVersion] = useState(0);
-  const audioContext = useRef<AudioContext>(undefined);
+  const context = useRef<AudioContext>(undefined);
+  // The same function every render, as previews decode and play again when it changes.
+  const audioContext = useCallback(() => (context.current ??= new AudioContext({ sampleRate })), []);
   // The latest index, for refreshing from, however recently it was set.
   const latest = useRef<UsageIndex>(undefined);
 
@@ -48,11 +50,16 @@ function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
   const current = useRef(selection);
   current.current = selection;
 
-  async function refresh(): Promise<UsageIndex> {
+  async function refresh(rewritten?: string[]): Promise<UsageIndex> {
     try {
-      const refreshed = await refreshIndex(card, latest.current, (done, total) => {
-        if (total) setIndexProgress(`Indexing ${done} of ${total}`);
-      });
+      const refreshed = await refreshIndex(
+        card,
+        latest.current,
+        (done, total) => {
+          if (total) setIndexProgress(`Indexing ${done} of ${total}`);
+        },
+        rewritten,
+      );
       latest.current = refreshed;
       setIndex(refreshed);
       setIndexProgress(undefined);
@@ -88,7 +95,7 @@ function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
         ? [selection.path]
         : [];
   const anchor = chosen === choice?.paths ? choice.anchor : selection.path;
-  const organise = useOrganise({
+  const organize = useOrganize({
     card,
     operations,
     selection: "view" in route ? undefined : selection,
@@ -122,7 +129,7 @@ function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
                   name={part}
                   folder={folder ? path : undefined}
                   onClick={() => navigate({ path, folder })}
-                  onDrop={organise.onDrop}
+                  onDrop={organize.onDrop}
                 />
               </Fragment>
             );
@@ -164,13 +171,13 @@ function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
           anchor={anchor}
           index={index}
           version={version}
-          tools={organise.tools}
+          tools={organize.tools}
           onSelect={navigate}
           onChoose={(paths, focus, { replace, anchor } = {}) => {
             setChoice({ paths, anchor: anchor ?? focus.path });
             navigate({ path: focus.path, folder: focus.kind === "folder" }, { replace });
           }}
-          onDrop={organise.onDrop}
+          onDrop={organize.onDrop}
         />
         <ErrorBoundary
           key={"view" in route ? route.view : selection.path}
@@ -200,13 +207,13 @@ function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
               card={card}
               path={selection.path}
               index={index}
-              audioContext={() => (audioContext.current ??= new AudioContext({ sampleRate }))}
+              audioContext={audioContext}
               onGoTo={(path) => navigate({ path, folder: false })}
             />
           )}
         </ErrorBoundary>
       </div>
-      {organise.dialog}
+      {organize.dialog}
     </div>
   );
 }

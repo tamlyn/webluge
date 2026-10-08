@@ -231,6 +231,16 @@ describe("planDelete", () => {
     ]);
   });
 
+  it("numbers a song's collected samples with it when both are chosen", async () => {
+    const { root, card, context } = await setup({ ...fixture, "TRASH/SONGS/Collected/DRUMS_Old.wav": "old" });
+    await run(card, await planDelete(context, ["SONGS/Collected", "SONGS/Collected.XML"]));
+    expect(Object.keys(snapshot(root)).filter((path) => path.startsWith("TRASH/")).sort()).toEqual([
+      "TRASH/SONGS/Collected 2.XML",
+      "TRASH/SONGS/Collected 2/DRUMS_Gone.wav",
+      "TRASH/SONGS/Collected/DRUMS_Old.wav",
+    ]);
+  });
+
   it("restores by moving back, which the songs find again", async () => {
     const { root, card, context } = await setup();
     await run(card, await planDelete(context, ["SAMPLES/Vox/Hey.wav"]));
