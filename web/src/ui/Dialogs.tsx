@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { type Card, baseName, parentPath } from "../card/card";
-import { canMoveInto, homeOf, nameProblem } from "../card/plan";
+import { canMoveInto, homeOf, inTrash, nameProblem } from "../card/plan";
 import { useAsync } from "./useAsync";
 
 // A modal dialog, as the browser draws one: focus stays inside it, and Escape cancels.
@@ -106,7 +106,8 @@ export function ConfirmDialog({
   );
 }
 
-// Picks a folder to move entries into, within their own top folder, starting from where they are.
+// Picks a folder to move entries into, within their own top folder, starting from where they are, or for entries in the
+// trash, from the top folder they'd go back to.
 export function MoveToDialog({
   card,
   paths,
@@ -119,7 +120,7 @@ export function MoveToDialog({
   onCancel: () => void;
 }) {
   const home = homeOf(paths[0])!;
-  const [folder, setFolder] = useState(parentPath(paths[0]));
+  const [folder, setFolder] = useState(inTrash(paths[0]) ? home : parentPath(paths[0]));
   const folders = useAsync(
     async () => (await card.list(folder)).filter((entry) => entry.kind === "folder"),
     [card, folder],

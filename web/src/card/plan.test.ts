@@ -176,7 +176,13 @@ describe("canMoveInto", () => {
     expect(canMoveInto(["SAMPLES/Unused.wav"], "SONGS")).toBe(false);
     expect(canMoveInto(["SAMPLES"], "SONGS")).toBe(false);
     expect(canMoveInto(["SAMPLES/Unused.wav"], "TRASH/SAMPLES")).toBe(false);
+    // Restoring from the trash, but not moving around inside it.
+    expect(canMoveInto(["TRASH/SAMPLES/Old.wav"], "SAMPLES/Vox")).toBe(true);
+    expect(canMoveInto(["TRASH/SAMPLES/Old.wav"], "SONGS")).toBe(false);
+    expect(canMoveInto(["TRASH/SAMPLES/Old.wav"], "TRASH/SAMPLES/Vox")).toBe(false);
     expect(canMoveInto([], "SAMPLES")).toBe(false);
+    expect(canMoveInto(["TRASH"], "SAMPLES")).toBe(false);
+    expect(canMoveInto(["TRASH/SAMPLES"], "SAMPLES")).toBe(false);
   });
 });
 
@@ -223,6 +229,16 @@ describe("planDelete", () => {
       "TRASH/SONGS/Collected 2/DRUMS_Gone.wav",
       "TRASH/SONGS/Collected/DRUMS_Old.wav",
     ]);
+  });
+
+  it("restores by moving back, which the songs find again", async () => {
+    const { root, card, context } = await setup();
+    await run(card, await planDelete(context, ["SAMPLES/Vox/Hey.wav"]));
+    context.index = await refreshIndex(card, context.index, () => {});
+    const restore = await planMoves(context, [{ from: "TRASH/SAMPLES/Vox/Hey.wav", to: "SAMPLES/Vox/Hey.wav" }]);
+    expect(restore.rewrites).toEqual([]);
+    await run(card, restore);
+    expect(snapshot(root)).toEqual({ ...fixture, "TRASH/SAMPLES/Vox/": "" });
   });
 
   it("never deletes from the trash", async () => {

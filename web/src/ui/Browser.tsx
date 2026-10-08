@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 import { type Card, type Entry, joinPath, parentPath } from "../card/card";
-import { homeOf, inTrash } from "../card/plan";
+import { homeOf } from "../card/plan";
 import { pathKey } from "../card/references";
 import type { UsageIndex } from "../card/usageIndex";
 import { type Drop, endDrag, startDrag, useDropTarget } from "./drag";
@@ -14,7 +14,7 @@ export type Selection = { path: string; folder: boolean };
 export type Choose = (paths: string[], focus: Entry, options?: { replace?: boolean; anchor?: string }) => void;
 
 // Each is undefined when it can't be used on what's chosen.
-export type Tools = { onNewFolder?: () => void; onRename?: () => void; onMoveTo?: () => void };
+export type Tools = { onNewFolder?: () => void; onRename?: () => void; onMoveTo?: () => void; onDelete?: () => void };
 
 type Props = {
   card: Card;
@@ -63,6 +63,9 @@ export function Browser({ card, selection, index, tools, onSelect, ...props }: P
           <button className="text-button" disabled={!tools.onMoveTo} onClick={tools.onMoveTo}>
             Move to…
           </button>
+          <button className="text-button" disabled={!tools.onDelete} onClick={tools.onDelete} title="Cmd-Backspace">
+            Delete
+          </button>
           <button className="text-button" disabled={!index} onClick={() => onSelect({ view: "missing" })}>
             Missing samples
           </button>
@@ -78,6 +81,7 @@ export function Browser({ card, selection, index, tools, onSelect, ...props }: P
             index={index}
             unusedOnly={unusedOnly}
             onSelect={onSelect}
+            onDelete={tools.onDelete}
             {...props}
           />
         ))}
@@ -95,9 +99,10 @@ function foldersShowing({ path, folder }: Selection): string[] {
 type ColumnProps = Omit<Props, "tools"> & {
   folder: string;
   unusedOnly: boolean;
+  onDelete?: () => void;
 };
 
-function Column({ card, folder, selection, chosen, anchor, index, version, unusedOnly, ...props }: ColumnProps) {
+function Column({ card, folder, selection, chosen, anchor, index, version, unusedOnly, onDelete, ...props }: ColumnProps) {
   const { onSelect, onChoose, onDrop } = props;
   const listed = useAsync(() => card.list(folder), [card, folder, version]);
   const list = useRef<HTMLUListElement>(null);
@@ -150,6 +155,11 @@ function Column({ card, folder, selection, chosen, anchor, index, version, unuse
 
   async function onKeyDown(event: KeyboardEvent) {
     if (!entries?.length) return;
+    if (event.key === "Backspace" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      if (holdsSelection) onDelete?.();
+      return;
+    }
     const i = current ? entries.indexOf(current) : -1;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -218,7 +228,7 @@ function EntryRow({
   onDrop: Drop;
 }) {
   const drop = useDropTarget(entry.kind === "folder" ? entry.path : undefined, onDrop);
-  const movable = homeOf(entry.path) !== undefined && !inTrash(entry.path);
+  const movable = homeOf(entry.path) !== undefined;
   return (
     <li
       className={`${entry.kind} ${state} ${drop.over ? "drop-target" : ""}`}

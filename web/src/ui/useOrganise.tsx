@@ -6,6 +6,7 @@ import {
   inTrash,
   needsConfirmation,
   type Plan,
+  planDelete,
   planMoves,
   planNewFolder,
 } from "../card/plan";
@@ -16,7 +17,8 @@ import type { Navigate } from "./route";
 import type { Operations } from "./useOperations";
 import { documentsSummary, plural } from "./words";
 
-// Moving, renaming and making folders, from the browser's toolbar and by dragging, each one plan through the operations.
+// Moving, renaming, deleting and making folders, from the browser's toolbar, keys and dragging, each one plan through
+// the operations.
 export function useOrganise({
   card,
   operations,
@@ -58,7 +60,8 @@ export function useOrganise({
       confirm("Move"),
     );
 
-  const movable = (path: string) => homeOf(path) !== undefined && !inTrash(path);
+  // Entries in the trash can move too, to put them back.
+  const movable = (path: string) => homeOf(path) !== undefined;
   const idle = !operations.busy && selection !== undefined;
   // New folders go in the folder showing the selection's contents, or the one holding it.
   const folder = selection && (selection.folder ? selection.path : parentPath(selection.path));
@@ -119,6 +122,15 @@ export function useOrganise({
               />,
             )
         : undefined,
+    onDelete:
+      idle && chosen.length > 0 && chosen.every((path) => movable(path) && !inTrash(path))
+        ? () =>
+            void operations.perform(
+              `Deleted ${describe(chosen)}`,
+              (context) => planDelete(context, chosen),
+              confirm("Delete"),
+            )
+        : undefined,
   };
 
   return {
@@ -134,16 +146,26 @@ function describe(paths: string[]): string {
   return paths.length === 1 ? baseName(paths[0]) : plural(paths.length, "item");
 }
 
+// How many names to list before summing up the rest.
+const namesShown = 8;
+
 // What a plan does beyond moving what was chosen.
 function sideEffects(plan: Plan, verb: string): string[] {
   const lines = plan.companions.map(({ from, to }) =>
     verb === "Rename"
       ? `Also renames its folder of collected samples, ${baseName(from)}, to ${baseName(to)}`
-      : `Also moves the folder of samples collected for ${baseName(from)}`,
+      : `Also ${verb === "Delete" ? "deletes" : "moves"} the folder of samples collected for ${baseName(from)}`,
   );
   if (plan.rewrites.length) {
     lines.push(`Also updates ${documentsSummary(plan.rewrites.map((rewrite) => rewrite.path))} that use what moves`);
   }
-  if (plan.broken.length) lines.push(`${documentsSummary(plan.broken)} will be missing samples`);
+  if (plan.broken.length) {
+    const names = plan.broken.map((path) => baseName(path).replace(/\.xml$/i, "")).sort();
+    const more = names.length - namesShown;
+    lines.push(
+      `Leaves ${documentsSummary(plan.broken)} missing samples: ${names.slice(0, namesShown).join(", ")}` +
+        (more > 0 ? ` and ${more} more` : ""),
+    );
+  }
   return lines;
 }

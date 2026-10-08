@@ -47,8 +47,9 @@ const homes = ["SONGS", "KITS", "SYNTHS", "SAMPLES"];
 export function homeOf(path: string): string | undefined {
   const parts = path.split("/");
   if (parts[0].toUpperCase() === trash) parts.shift();
+  if (parts.length < 2) return undefined;
   const home = parts[0].toUpperCase();
-  return parts.length > 1 && homes.includes(home) ? home : undefined;
+  return homes.includes(home) ? home : undefined;
 }
 
 export function inTrash(path: string): boolean {
@@ -318,7 +319,8 @@ function relinkPresets(text: string, move: Move): Edit[] {
 }
 
 // Whether entries could move into a folder, by the rules that need nothing read from the card: somewhere else in their
-// own top folder, and not inside themselves. The planner checks the rest.
+// own top folder, and not inside themselves. Entries in the trash can go back to their top folder. The planner checks
+// the rest.
 export function canMoveInto(paths: string[], folder: string): boolean {
   return (
     paths.length > 0 &&
@@ -326,7 +328,6 @@ export function canMoveInto(paths: string[], folder: string): boolean {
       const home = homeOf(path);
       return (
         home !== undefined &&
-        !inTrash(path) &&
         homeOf(joinPath(folder, "_")) === home &&
         !inTrash(folder) &&
         !same(parentPath(path), folder) &&

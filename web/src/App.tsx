@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Card } from "./card/card";
+import { Card, parentPath } from "./card/card";
 import { rememberedCard } from "./card/connect";
-import { followMove, planRelinks } from "./card/plan";
+import { followMove, inTrash, planRelinks } from "./card/plan";
 import { refreshIndex, type UsageIndex } from "./card/usageIndex";
 import { sampleRate } from "./preview/firmware";
 import { Browser, type Selection } from "./ui/Browser";
@@ -63,13 +63,16 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
   }
   const operations = useOperations(card, refresh, (done) => {
     setVersion((version) => version + 1);
-    const { path, folder } = current.current;
-    const moved = followMove(done, path);
-    if (moved !== path && !("view" in routeOf(location.hash))) navigate({ path: moved, folder }, { replace: true });
     setChoice(
       (choice) =>
         choice && { paths: choice.paths.map((path) => followMove(done, path)), anchor: followMove(done, choice.anchor) },
     );
+    const { path, folder } = current.current;
+    const moved = followMove(done, path);
+    if ("view" in routeOf(location.hash) || moved === path) return;
+    // What's deleted isn't followed into the trash: the folder it was in stays showing.
+    if (inTrash(moved) && !inTrash(path)) navigate({ path: parentPath(path), folder: true }, { replace: true });
+    else navigate({ path: moved, folder }, { replace: true });
   });
 
   useEffect(() => {
