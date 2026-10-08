@@ -139,6 +139,8 @@ add_executable(webluge_web src/web.cpp)
 target_link_libraries(webluge_web PRIVATE firmware)
 set_target_properties(webluge_web PROPERTIES SUFFIX ".mjs")
 target_link_options(webluge_web PRIVATE
+	# Debug info makes the download twelve times bigger. This overrides the build type's -g for this target only.
+	-g0
 	--no-entry
 	-sENVIRONMENT=web,worker,node
 	-sMODULARIZE=1
