@@ -33,29 +33,33 @@ export function ClipView({ card, player, audioContext }: Props) {
   if (!song.clips.length) return null;
   return (
     <>
-      <h3>Clips</h3>
+      <div className="section-head">
+        <h3 className="label">Clips</h3>
+        <span className="hint">Pad starts or stops at loop end · Shift + pad does it now</span>
+      </div>
       <ul className="clips">
         {song.clips.map((clip, i) => {
           const state = states?.[i];
+          const name = baseName(clip.name || clip.output) || clip.type;
           return (
-            <li key={i} className={`clip ${state?.active ? "active" : ""}`}>
+            <li
+              key={i}
+              className={`clip ${state?.active ? "active" : ""}`}
+              style={{ "--clip-colour": clip.colour } as CSSProperties}
+            >
               <button
                 className={`launch ${state?.armed ? "armed" : ""}`}
-                style={{ "--clip-colour": clip.colour } as CSSProperties}
+                aria-label={`${state?.active ? "Stop" : "Start"} ${name}`}
                 title="Start or stop at the end of its loop. Shift-click to do it now."
                 onClick={(event: MouseEvent) => player.toggleClip(i, event.shiftKey)}
               />
               <span className="clip-name" title={clip.output}>
-                {baseName(clip.name || clip.output) || clip.type}
-                <span className="clip-type">{clip.type}</span>
+                <strong>{name}</strong>
+                <span className="label">
+                  {clip.type}
+                  {state?.armed && (state.active ? " · stopping" : " · starting")}
+                </span>
               </span>
-              <button
-                className={`solo ${state?.soloing ? "on" : ""}`}
-                title="Solo"
-                onClick={() => player.soloClip(i)}
-              >
-                S
-              </button>
               <div className="lane">
                 {clip.sample ? (
                   <Waveform card={card} clip={clip} audioContext={audioContext} />
@@ -64,6 +68,14 @@ export function ClipView({ card, player, audioContext }: Props) {
                 )}
                 <div className="play-head" ref={(head) => void (playHeads.current[i] = head)} hidden={!state?.active} />
               </div>
+              <button
+                className={`solo ${state?.soloing ? "on" : ""}`}
+                aria-label={`Solo ${name}`}
+                aria-pressed={!!state?.soloing}
+                onClick={() => player.soloClip(i)}
+              >
+                S
+              </button>
             </li>
           );
         })}
@@ -77,7 +89,7 @@ function sameFlags(a: ClipState[], b: ClipState[]): boolean {
 }
 
 const laneWidth = 800;
-const laneHeight = 40;
+const laneHeight = 52;
 
 function useLaneCanvas(draw: (context: CanvasRenderingContext2D) => void, deps: unknown[]) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -109,6 +121,10 @@ function Notes({ clip, ticksPerQuarterNote }: { clip: ClipDescription; ticksPerQ
       const lowest = Math.min(...ys);
       const span = Math.max(...ys) - lowest + 1;
       const rowHeight = laneHeight / span;
+      if (clip.type === "kit") {
+        context.fillStyle = style.getPropertyValue("--grid");
+        for (let i = 1; i < span; i++) context.fillRect(0, Math.round(i * rowHeight), laneWidth, 1);
+      }
       for (const row of rows) {
         const top = laneHeight - (yOf(row) - lowest + 1) * rowHeight;
         context.fillStyle = row.colour;

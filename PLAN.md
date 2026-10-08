@@ -157,6 +157,7 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-10-07 | The web app looks like the Deluge (black panel, OLED-style readouts, lit pads, JetBrains Mono), browses the card in Finder-style columns, and puts each preview's play controls beside it rather than in a global transport | Picked from four directions on a design canvas. A preview plays only the song or sample selected, so there's nothing for a global transport to control |
 | 2026-10-07 | Clip views read the song from the firmware (`webluge_web_describe`), not from the XML | The firmware has already parsed every song format, kits' drum names and the clips' colours. The JSON goes out in code page 437, like the names, and the page decodes it as that |
 | 2026-10-07 | Render 2048 frames at a time, 150ms ahead of playback, from the main thread's timer, rather than through an AudioWorklet and ring buffer (5.1) | Short enough that a toggle is heard almost at once, and cheap: 2048 frames of even `Annoying Song` render in about a millisecond. Chrome doesn't throttle timers in tabs playing audio. Revisit with 5.1 if it underruns |
 | 2026-10-07 | Preview songs with a fresh firmware instance per song, rendering in a worker ahead of playback, rather than waiting for Phase 5's real-time AudioWorklet | The firmware boots once per instance (as the tests do), and rendering runs 40 to 100 times faster than real time (4.3), so a worker that keeps a few seconds ahead plays smoothly without SharedArrayBuffer or COOP/COEP headers |

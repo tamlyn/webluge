@@ -38,6 +38,10 @@ export type Rendered = {
 
 export const sampleRate = 44100;
 
+export function bpm(framesPerTick: number, ticksPerQuarterNote: number): number {
+  return (60 * sampleRate) / (framesPerTick * ticksPerQuarterNote);
+}
+
 const cardFolder = "/card";
 
 export class Firmware {

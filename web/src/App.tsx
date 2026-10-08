@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { Card, parentPath } from "./card/card";
+import { Card } from "./card/card";
 import { rememberedCard } from "./card/connect";
 import { buildSampleIndex, type SampleIndex } from "./card/sampleIndex";
 import { sampleRate } from "./preview/firmware";
+import { Browser, type Selection } from "./ui/Browser";
 import { ConnectCard } from "./ui/ConnectCard";
 import { Details } from "./ui/Details";
-import { FolderList } from "./ui/FolderList";
+
+const root: Selection = { path: "", folder: true };
 
 export function App() {
   const [remembered, setRemembered] = useState<FileSystemDirectoryHandle>();
   const [card, setCard] = useState<Card>();
   const [index, setIndex] = useState<SampleIndex>();
   const [indexProgress, setIndexProgress] = useState<string>();
-  const [folder, setFolder] = useState("");
-  const [selected, setSelected] = useState<string>();
+  const [selection, setSelection] = useState(root);
   const audioContext = useRef<AudioContext>(undefined);
 
   useEffect(() => {
@@ -43,48 +44,54 @@ export function App() {
         remembered={remembered}
         onConnect={(handle) => {
           setCard(new Card(handle));
-          setFolder("");
-          setSelected(undefined);
+          setSelection(root);
         }}
       />
     );
   }
 
-  function goTo(path: string) {
-    setFolder(parentPath(path));
-    setSelected(path);
-  }
-
+  const parts = selection.path ? selection.path.split("/") : [];
   return (
     <div className="app">
-      <header>
+      <header className="top">
         <h1>Webluge</h1>
-        {indexProgress && <span className="muted">{indexProgress}</span>}
-        <button onClick={() => setCard(undefined)}>Close card</button>
+        <nav className="path" aria-label="Path">
+          <button onClick={() => setSelection(root)}>{card.name}</button>
+          {parts.map((part, i) => (
+            <span key={i}>
+              {"/ "}
+              <button
+                onClick={() =>
+                  setSelection({ path: parts.slice(0, i + 1).join("/"), folder: i < parts.length - 1 || selection.folder })
+                }
+              >
+                {part}
+              </button>
+            </span>
+          ))}
+        </nav>
+        <div className="card-name">
+          {indexProgress && <span>{indexProgress}</span>}
+          <button className="key" onClick={() => setCard(undefined)}>
+            Eject
+          </button>
+        </div>
       </header>
-      <FolderList
-        card={card}
-        folder={folder}
-        selected={selected}
-        index={index}
-        onOpenFolder={(path) => {
-          setFolder(path);
-          setSelected(undefined);
-        }}
-        onSelect={setSelected}
-      />
-      {selected ? (
-        <Details
-          key={selected}
-          card={card}
-          path={selected}
-          index={index}
-          audioContext={() => (audioContext.current ??= new AudioContext({ sampleRate }))}
-          onGoTo={goTo}
-        />
-      ) : (
-        <section className="details muted">Pick a song or sample. Use the arrow keys to step through a folder.</section>
-      )}
+      <div className="body">
+        <Browser card={card} selection={selection} index={index} onSelect={setSelection} />
+        {selection.folder ? (
+          <section className="details empty">Pick a song or sample. The arrow keys move through the columns.</section>
+        ) : (
+          <Details
+            key={selection.path}
+            card={card}
+            path={selection.path}
+            index={index}
+            audioContext={() => (audioContext.current ??= new AudioContext({ sampleRate }))}
+            onGoTo={(path) => setSelection({ path, folder: false })}
+          />
+        )}
+      </div>
     </div>
   );
 }

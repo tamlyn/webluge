@@ -2,7 +2,7 @@
 // clip is heard soon after.
 
 import type { CardFile, ClipState, SongDescription } from "./firmware";
-import { sampleRate } from "./firmware";
+import { bpm, sampleRate } from "./firmware";
 import type { Request, Response } from "./worker";
 
 const chunkFrames = 2048;
@@ -75,6 +75,12 @@ export class SongPlayer {
       ...clip,
       pos: clip.active ? (clip.pos + ticks) % this.song.clips[i].loopLength : clip.pos,
     }));
+  }
+
+  // As the latest chunk to start playing was rendered.
+  bpm(): number | undefined {
+    const latest = this.timeline[0];
+    return latest && bpm(latest.framesPerTick, this.song.ticksPerQuarterNote);
   }
 
   private async pump() {

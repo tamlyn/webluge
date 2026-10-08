@@ -1,35 +1,29 @@
+/* Black panel, white OLED text and lit pads, after the Deluge itself. */
 :root {
-  --bg: #f6f5f2;
-  --panel: #ffffff;
-  --text: #1d1d1f;
-  --muted: #76746f;
-  --line: #e2e0da;
-  --accent: #d6402e;
-  --accent-text: #ffffff;
-  --selected: #fbe3df;
-  --warning: #a86200;
-  --grid: #efede8;
-  --grid-bar: #d8d5ce;
-  --mono: ui-monospace, "SF Mono", Menlo, monospace;
-  color-scheme: light dark;
-  font: 14px/1.45 system-ui, -apple-system, sans-serif;
+  --bg: #0b0b0c;
+  --panel: #111113;
+  --raised: #141416;
+  --hover: #161619;
+  --selected: #1c1c20;
+  --oled: #000000;
+  --oled-line: #2a2a2e;
+  --line: #1f1f22;
+  --line-strong: #333338;
+  --text: #e9e7e2;
+  --bright: #ffffff;
+  --soft: #c9c7c2;
+  --muted: #9a9aa0;
+  --dim: #8a8a90;
+  --off: #222226;
+  --accent: #ff6a2b;
+  --accent-glow: rgb(255 106 43 / 45%);
+  --grid: #18181b;
+  --grid-bar: #26262b;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+  font: 13px/1.45 var(--mono);
   color: var(--text);
   background: var(--bg);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141414;
-    --panel: #1d1d1d;
-    --text: #ececec;
-    --muted: #8d8b87;
-    --line: #2e2e2e;
-    --accent: #ef5a45;
-    --selected: #3a2420;
-    --warning: #e0a040;
-    --grid: #262626;
-    --grid-bar: #3a3a3a;
-  }
 }
 
 * {
@@ -41,70 +35,133 @@ body {
   background: var(--bg);
 }
 
-h1 {
-  font-size: 15px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin: 0;
-}
-
-h2 {
-  font-size: 18px;
-  margin: 0 0 12px;
-  overflow-wrap: anywhere;
-}
-
+h1,
+h2,
 h3 {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  margin: 20px 0 6px;
+  margin: 0;
 }
 
 button {
   font: inherit;
   color: inherit;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 12px;
   cursor: pointer;
 }
 
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .muted {
   color: var(--muted);
 }
 
-.error,
-.missing {
+.missing,
+.error {
   color: var(--accent);
 }
 
-.warning {
-  color: var(--warning);
+/* Small capitals labels, as on the device's panel. */
+.label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
+.text-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--soft);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.text-button:hover {
+  color: var(--bright);
+}
+
+.key {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 2px solid var(--line-strong);
+  background: var(--raised);
+  color: var(--soft);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.key.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+/* Square pads that light up. */
+.pad {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 2px solid var(--line-strong);
+  background: var(--raised);
+  color: var(--soft);
+  padding: 0;
+}
+
+.pad.lit {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  box-shadow: 0 0 18px var(--accent-glow);
+}
+
+.pad.busy {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: blink 0.5s steps(1) infinite;
+}
+
+.pad svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* Opening a card */
+
 .connect {
-  max-width: 440px;
+  max-width: 480px;
   margin: 18vh auto 0;
   padding: 0 16px;
+  display: grid;
+  gap: 16px;
 }
 
 .connect h1 {
-  font-size: 22px;
-  margin-bottom: 12px;
+  font-size: 13px;
+  letter-spacing: 0.24em;
+}
+
+.connect p {
+  margin: 0;
+  color: var(--soft);
 }
 
 .connect-actions {
@@ -113,60 +170,143 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+/* The app */
+
 .app {
-  display: grid;
-  grid-template: auto 1fr / minmax(280px, 2fr) 3fr;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
 }
 
-header {
-  grid-column: 1 / -1;
+.top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  padding: 10px 16px;
+  gap: 8px 28px;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--line);
 }
 
-header button {
-  margin-left: auto;
+.top h1,
+.connect h1 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
 }
 
-.folder {
+.path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.path button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--soft);
+  text-transform: uppercase;
+  letter-spacing: inherit;
+}
+
+.path button:hover,
+.path :last-child {
+  color: var(--bright);
+}
+
+.card-name {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Finder-style columns */
+
+.browser {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  max-width: 65%;
   border-right: 1px solid var(--line);
 }
 
-.breadcrumbs {
-  padding: 8px 12px;
+.browser-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 41px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--line);
-  overflow-wrap: anywhere;
 }
 
-.breadcrumbs button,
-.links button {
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--accent);
-  text-align: left;
-  overflow-wrap: anywhere;
+.browser-tools label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.links button {
-  color: var(--text);
+.browser-tools input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
-.links button:hover {
-  text-decoration: underline;
+.columns {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+}
+
+.column {
+  flex: 0 0 190px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+}
+
+.column:first-child {
+  flex-basis: 150px;
+}
+
+.column.has-audio {
+  flex-basis: 330px;
+}
+
+.column:last-child {
+  border-right: 0;
+}
+
+.column > .label {
+  padding: 14px 16px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .entries {
   list-style: none;
   margin: 0;
-  padding: 4px 0;
+  padding: 0 0 12px;
   overflow-y: auto;
   flex: 1;
   outline: none;
@@ -174,26 +314,21 @@ header button {
 
 .entries li {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  padding: 3px 12px;
+  padding: 6px 16px;
+  color: var(--soft);
   cursor: pointer;
 }
 
-.entries li .name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.entries li:hover {
+  background: var(--hover);
 }
 
-.entries li.folder .name::before {
-  content: "▸ ";
-  color: var(--muted);
-}
-
+.entries li.on-path,
 .entries li.selected {
   background: var(--selected);
+  color: var(--bright);
 }
 
 .entries:focus-visible li.selected {
@@ -202,129 +337,356 @@ header button {
 }
 
 .entries li.empty {
-  color: var(--muted);
+  color: var(--dim);
   cursor: default;
 }
 
-.badge {
-  font: 11px var(--mono);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 0 6px;
+.entries .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.badge.unused {
-  opacity: 0.5;
+.entries .chevron {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  color: var(--dim);
 }
+
+/* The card's top folders, with a mode-button light that's lit for the one in use. */
+.led {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--raised);
+}
+
+.on-path .led,
+.selected .led {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.meter span {
+  width: 4px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--off);
+}
+
+.meter span.on {
+  background: var(--soft);
+}
+
+.selected .meter span.on {
+  background: var(--accent);
+}
+
+.meter output {
+  width: 26px;
+  margin-left: 8px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+/* What's selected */
 
 .details {
-  padding: 16px 20px;
+  flex: 1;
+  min-width: 0;
   overflow-y: auto;
+  padding: 20px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.details.empty {
+  justify-content: center;
+  align-items: center;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.oled {
+  background: var(--oled);
+  border: 1px solid var(--oled-line);
+  border-radius: 8px;
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   min-width: 0;
 }
 
-.details audio {
-  width: 100%;
-}
-
-.playback {
+.oled-head {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
-.links {
+.oled h2 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.oled p {
+  margin: 2px 0 0;
+}
+
+.readout {
+  text-align: right;
+  font-size: 22px;
+}
+
+.readout .label {
+  display: block;
+}
+
+.deck {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.deck .oled {
+  flex: 1 1 380px;
+}
+
+.deck .pad {
+  width: 76px;
+  min-height: 64px;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.section-head h3 {
+  font-weight: 500;
+  letter-spacing: 0.16em;
+}
+
+.section-head .hint {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.notice {
+  margin: 0;
+  color: var(--soft);
+}
+
+/* Links to songs, kits, synths and samples, as tiles. */
+.tiles {
   list-style: none;
   margin: 0;
   padding: 0;
-  font: 12px/1.7 var(--mono);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px;
 }
 
-@media (max-width: 700px) {
-  .app {
-    grid-template: auto 1fr 1fr / 1fr;
-  }
-  .folder {
-    border-right: none;
-    border-bottom: 1px solid var(--line);
-  }
+.tile {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
 }
+
+button.tile:hover {
+  border-color: var(--line-strong);
+  background: var(--hover);
+}
+
+.tile .tag {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--soft);
+}
+
+.tile .tag.kit {
+  background: var(--accent);
+}
+
+.tile .tag.synth {
+  background: #4aa8ff;
+}
+
+.tile-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tile-text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-text small {
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+}
+
+.tile.missing {
+  border-color: rgb(255 106 43 / 40%);
+}
+
+/* A sample */
+
+.waveform {
+  display: block;
+  width: 100%;
+  height: 200px;
+}
+
+.scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.transport .pad {
+  width: 64px;
+  height: 64px;
+}
+
+.transport .key {
+  height: 64px;
+}
+
+/* A song's clips */
 
 .clips {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 4px;
+  gap: 8px;
 }
 
 .clip {
   display: grid;
-  grid-template-columns: 22px minmax(60px, 140px) 26px 1fr;
+  grid-template-columns: 44px minmax(80px, 140px) minmax(0, 1fr) 44px;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
 }
 
 .clip-name {
+  min-width: 0;
+}
+
+.clip-name strong {
+  display: block;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.clip-type {
-  margin-left: 6px;
-  font-size: 11px;
+.clip:not(.active) .clip-name strong {
   color: var(--muted);
 }
 
-.clip:not(.active) .clip-name,
-.clip:not(.active) .lane {
+.clip:not(.active) .lane canvas {
   opacity: 0.4;
 }
 
 .launch {
-  width: 22px;
-  height: 22px;
+  width: 44px;
+  height: 44px;
   padding: 0;
+  border-radius: 6px;
   border: 2px solid var(--clip-colour);
-  background: transparent;
+  background: var(--raised);
 }
 
 .clip.active .launch {
   background: var(--clip-colour);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--clip-colour) 60%, transparent);
 }
 
 .launch.armed {
   animation: blink 0.5s steps(1) infinite;
 }
 
-@keyframes blink {
-  50% {
-    background: transparent;
-    border-color: transparent;
-  }
-}
-
 .solo {
+  width: 44px;
+  height: 44px;
   padding: 0;
-  height: 22px;
-  font: 11px var(--mono);
+  border-radius: 6px;
+  border: 2px solid var(--line-strong);
+  background: var(--raised);
+  color: var(--dim);
+  font-size: 12px;
 }
 
 .solo.on {
-  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent-text);
+  background: var(--accent);
+  color: var(--bg);
+  box-shadow: 0 0 14px var(--accent-glow);
 }
 
 .lane {
   position: relative;
-  height: 40px;
+  height: 52px;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid #1a1a1d;
   border-radius: 4px;
   overflow: hidden;
+}
+
+.clip.active .lane {
+  border-color: color-mix(in srgb, var(--clip-colour) 35%, transparent);
 }
 
 .lane canvas {
@@ -339,5 +701,27 @@ header button {
   bottom: 0;
   width: 2px;
   margin-left: -1px;
-  background: var(--text);
+  background: var(--bright);
+}
+
+@media (max-width: 800px) {
+  .body {
+    flex-direction: column;
+  }
+  .browser {
+    max-width: none;
+    height: 45vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .details {
+    padding: 16px;
+  }
+  .clip {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+  }
+  .clip .lane {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }

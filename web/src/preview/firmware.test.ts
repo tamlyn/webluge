@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { type CardFile, Firmware, sampleRate } from "./firmware";
+import { bpm, type CardFile, Firmware, sampleRate } from "./firmware";
 
 const card = fileURLToPath(new URL("../../../reference/1.2.1/Reference Kit 808/card", import.meta.url));
 
@@ -43,6 +43,12 @@ describe("Firmware", () => {
       expect(clip.rows!.some((row) => row.notes.length)).toBe(true);
     }
     expect(song.clips[0].rows!.map((row) => row.name)).toEqual(["KICK", "SNARE", "HATC", "HATO"]);
+  });
+
+  it("plays at the song's tempo", async () => {
+    const firmware = await load();
+    const { framesPerTick } = firmware.render(1024);
+    expect(bpm(framesPerTick, firmware.song.ticksPerQuarterNote)).toBeCloseTo(120, 0);
   });
 
   it("toggles a clip at the end of its loop", async () => {
