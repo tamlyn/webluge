@@ -1,7 +1,7 @@
 // Plays a song, kit or synth as the firmware renders it. It renders only a little ahead of what's playing, so that
 // toggling a clip or auditioning a drum is heard soon after.
 
-import type { CardFile, ClipState, SongDescription } from "./firmware";
+import type { CardFile, PlaybackState, SongDescription } from "./firmware";
 import { bpm, sampleRate } from "./firmware";
 import type { Request, Response } from "./worker";
 
@@ -11,7 +11,7 @@ const pacing = {
   preset: { chunkFrames: 512, secondsAhead: 0.05 },
 };
 
-type Timeline = { time: number; clips: ClipState[]; framesPerTick: number };
+type Timeline = { time: number; state: PlaybackState; framesPerTick: number };
 
 export class Player {
   private context?: AudioContext;
@@ -21,7 +21,7 @@ export class Player {
   private pending?: (response: Response) => void;
   // Once the worker itself has failed, it won't answer again.
   private failure?: Response;
-  // Clip states as each scheduled chunk starts, oldest first.
+  // The playback state as each scheduled chunk starts, oldest first.
   private timeline: Timeline[] = [];
 
   private constructor(
@@ -30,7 +30,7 @@ export class Player {
     readonly numMissing: number,
     readonly song: SongDescription,
     // As the song was saved, before it plays.
-    readonly initialStates: ClipState[],
+    readonly initialState: PlaybackState,
   ) {}
 
   // A kit or synth is a preset: the song is then the blank one, with the preset its only clip.
@@ -45,7 +45,7 @@ export class Player {
       worker.terminate();
       throw new Error(loaded.type === "error" ? loaded.message : "Unexpected reply");
     }
-    const player = new Player(worker, pacing[preset ? "preset" : "song"], loaded.numMissing, loaded.song, loaded.clips);
+    const player = new Player(worker, pacing[preset ? "preset" : "song"], loaded.numMissing, loaded.song, loaded.state);
     worker.onmessage = ({ data }: MessageEvent<Response>) => player.pending?.(data);
     worker.onerror = (event) => {
       player.failure = workerFailed(event);
@@ -54,12 +54,13 @@ export class Player {
     return player;
   }
 
-  // Plays from the start. Once stopped, it must be loaded again to play it again.
-  start(context: AudioContext, onError: (message: string) => void) {
+  // Plays from the start. Once stopped, it must be loaded again to play it again. A song that plays its arrangement
+  // to the end stops itself, as heard, but renders on so that its sounds can ring out.
+  start(context: AudioContext, onError: (message: string) => void, onEnded = () => {}) {
     if (this.context || this.stopped) return;
     this.context = context;
     this.nextTime = context.currentTime + this.pacing.secondsAhead;
-    this.pump().catch((error: Error) => {
+    this.pump(onEnded).catch((error: Error) => {
       this.stop();
       onError(error.message);
     });
@@ -79,23 +80,33 @@ export class Player {
     post(this.worker, { type: "solo", index });
   }
 
+  switchTo(to: "session" | "arrangement") {
+    post(this.worker, { type: "switch", to });
+  }
+
   // A preset's drum, by its row, or a synth's note.
   audition(y: number, on: boolean) {
     post(this.worker, { type: "audition", y, on });
   }
 
   // As heard now, with positions moved on from the latest chunk to start playing.
-  clipStates(): ClipState[] | undefined {
+  state(): PlaybackState | undefined {
     if (!this.context || this.stopped) return undefined;
     const now = this.context.currentTime;
     while (this.timeline.length > 1 && this.timeline[1].time <= now) this.timeline.shift();
     const latest = this.timeline[0];
     if (!latest || latest.time > now) return undefined;
     const ticks = ((now - latest.time) * sampleRate) / latest.framesPerTick;
-    return latest.clips.map((clip, i) => ({
-      ...clip,
-      pos: clip.active ? (clip.pos + ticks) % this.song.clips[i].loopLength : clip.pos,
-    }));
+    const { state } = latest;
+    if (!state.playing) return state;
+    return {
+      ...state,
+      arrangementPos: state.arrangement ? state.arrangementPos + ticks : state.arrangementPos,
+      clips: state.clips.map((clip, i) => ({
+        ...clip,
+        pos: clip.active ? (clip.pos + ticks) % this.song.clips[i].loopLength : clip.pos,
+      })),
+    };
   }
 
   // As the latest chunk to start playing was rendered.
@@ -104,7 +115,7 @@ export class Player {
     return latest && bpm(latest.framesPerTick, this.song.ticksPerQuarterNote);
   }
 
-  private async pump() {
+  private async pump(onEnded: () => void) {
     const context = this.context!;
     while (!this.stopped) {
       if (this.nextTime - context.currentTime > this.pacing.secondsAhead) {
@@ -117,7 +128,11 @@ export class Player {
       if (response.type === "rendered") {
         // If rendering fell behind, carry on from now rather than skip.
         this.nextTime = Math.max(this.nextTime, context.currentTime);
-        this.timeline.push({ time: this.nextTime, clips: response.clips, framesPerTick: response.framesPerTick });
+        const previous = this.timeline.at(-1)?.state ?? this.initialState;
+        if (previous.playing && !response.state.playing) {
+          setTimeout(() => this.stopped || onEnded(), 1000 * (this.nextTime - context.currentTime));
+        }
+        this.timeline.push({ time: this.nextTime, state: response.state, framesPerTick: response.framesPerTick });
         this.schedule(context, response.left, response.right);
       }
     }

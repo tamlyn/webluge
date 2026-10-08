@@ -9,6 +9,7 @@
 #include "hal/disk.h"
 #include "host_allocator.h"
 #include "model/clip/audio_clip.h"
+#include "model/clip/clip_instance.h"
 #include "model/clip/instrument_clip.h"
 #include "extern.h"
 #include "model/drum/drum.h"
@@ -37,7 +38,9 @@ webluge::CardImage card;
 // Interleaved stereo.
 webluge::HostVector<float> rendered;
 HostString description;
-webluge::HostVector<int32_t> clipStates;
+webluge::HostVector<int32_t> states;
+// Where the arrangement was when the session took over, to go back to.
+int32_t arrangementPosLeft = 0;
 
 void collect(int32_t left, int32_t right, void*) {
 	rendered.push_back(left / 2147483648.f);
@@ -145,6 +148,37 @@ void appendSample(HostString& json, AudioClip* clip) {
 	json += "}";
 }
 
+// The arrangement as the arranger view shows it: a track per output that has clip instances, each coloured as on
+// the pads.
+void appendTracks(HostString& json) {
+	json += "\"tracks\":[";
+	bool first = true;
+	for (Output* output = currentSong->firstOutput; output; output = output->next) {
+		if (!output->clipInstances.getNumElements()) {
+			continue;
+		}
+		json += first ? "{" : ",{";
+		first = false;
+		json += "\"name\":";
+		appendString(json, output->name.get());
+		json += ",\"type\":";
+		appendString(json, typeName(output->type));
+		json += ",\"instances\":[";
+		for (int32_t i = 0; i < output->clipInstances.getNumElements(); i++) {
+			ClipInstance* instance = output->clipInstances.getElement(i);
+			json += i ? ",[" : "[";
+			appendNumber(json, instance->pos);
+			json += ",";
+			appendNumber(json, instance->length);
+			json += ",";
+			appendColour(json, instance->getColour());
+			json += "]";
+		}
+		json += "]}";
+	}
+	json += "]";
+}
+
 void describeSong() {
 	description = "{\"arrangement\":";
 	description += currentPlaybackMode == &arrangement ? "true" : "false";
@@ -177,7 +211,26 @@ void describeSong() {
 		}
 		description += "}";
 	}
-	description += "]}";
+	description += "],";
+	appendTracks(description);
+	description += "}";
+}
+
+// As the device does when a session view pad is pressed while the arrangement plays. The clips the arrangement was
+// playing play on in the session.
+// The device's own test: the flag is left set once the switch is done.
+bool switchingToArrangement() {
+	return currentPlaybackMode == &session && session.launchEventAtSwungTickCount
+	       && session.switchToArrangementAtLaunchEvent;
+}
+
+bool switchedToSession() {
+	if (!playbackHandler.playbackState || currentPlaybackMode != &arrangement) {
+		return false;
+	}
+	arrangementPosLeft = arrangement.getLivePos();
+	playbackHandler.switchToSession();
+	return true;
 }
 
 Clip* sessionClip(int32_t index) {
@@ -257,8 +310,8 @@ EMSCRIPTEN_KEEPALIVE void webluge_web_audition(int32_t y, bool on) {
 	}
 }
 
-// The song's session clips and their notes, as JSON, valid until the next call. Call after play, which decides
-// whether the song plays its arrangement; webluge_web_description_length says how many bytes.
+// The song's session clips and their notes, and its arrangement, as JSON, valid until the next call. Call after
+// play, which decides whether the song plays its arrangement; webluge_web_description_length says how many bytes.
 EMSCRIPTEN_KEEPALIVE const char* webluge_web_describe() {
 	describeSong();
 	return description.data();
@@ -282,31 +335,62 @@ EMSCRIPTEN_KEEPALIVE uint32_t webluge_web_rendered_frames() {
 }
 
 // As pressing a clip's pad in session view: it starts or stops at the end of its loop, or straight away if instant
-// (shift on the device).
+// (shift on the device). While the arrangement plays, it only switches to the session, as on the device.
 EMSCRIPTEN_KEEPALIVE void webluge_web_toggle_clip(int32_t index, bool instant) {
+	if (switchedToSession()) {
+		return;
+	}
 	if (Clip* clip = sessionClip(index)) {
 		session.toggleClipStatus(clip, &index, instant, kInternalButtonPressLatency);
 	}
 }
 
 EMSCRIPTEN_KEEPALIVE void webluge_web_solo_clip(int32_t index) {
+	if (switchedToSession()) {
+		return;
+	}
 	if (Clip* clip = sessionClip(index)) {
 		session.soloClipAction(clip, kInternalButtonPressLatency);
 	}
 }
 
-// For each session clip, its position in ticks and its state (kClipActive and so on), valid until the next call.
-EMSCRIPTEN_KEEPALIVE int32_t* webluge_web_clip_states() {
+EMSCRIPTEN_KEEPALIVE void webluge_web_switch_to_session() {
+	switchedToSession();
+}
+
+// Back to the arrangement from where it was left, once the longest clip playing reaches the end of its loop, as with
+// the device's switch from session to arranger.
+EMSCRIPTEN_KEEPALIVE void webluge_web_switch_to_arrangement() {
+	if (playbackHandler.playbackState && currentPlaybackMode == &session && !switchingToArrangement()) {
+		playbackHandler.arrangementPosToStartAtOnSwitch = arrangementPosLeft;
+		session.armForSwitchToArrangement();
+	}
+}
+
+// The playback state (kPlaying and so on) and the arrangement's position in ticks, then for each session clip its
+// position and its state (kClipActive and so on), valid until the next call.
+EMSCRIPTEN_KEEPALIVE int32_t* webluge_web_states() {
+	constexpr int32_t kPlaying = 1, kArrangement = 2, kSwitchingToArrangement = 4;
 	constexpr int32_t kClipActive = 1, kClipArmed = 2, kClipSoloing = 4;
-	clipStates.clear();
+	bool playing = playbackHandler.isEitherClockActive();
+	bool inArrangement = currentPlaybackMode == &arrangement;
+	states.clear();
+	states.push_back((playing ? kPlaying : 0) | (inArrangement ? kArrangement : 0)
+	                 | (switchingToArrangement() ? kSwitchingToArrangement : 0));
+	if (!inArrangement) {
+		states.push_back(arrangementPosLeft);
+	}
+	else {
+		states.push_back(playing ? arrangement.getLivePos() : arrangement.lastProcessedPos);
+	}
 	for (int32_t c = 0; c < currentSong->sessionClips.getNumElements(); c++) {
 		Clip* clip = currentSong->sessionClips.getClipAtIndex(c);
-		clipStates.push_back(clip->getLivePos());
-		clipStates.push_back((currentSong->isClipActive(clip) ? kClipActive : 0)
-		                     | (clip->armState != ArmState::OFF ? kClipArmed : 0)
-		                     | (clip->soloingInSessionMode ? kClipSoloing : 0));
+		states.push_back(clip->getLivePos());
+		states.push_back((currentSong->isClipActive(clip) ? kClipActive : 0)
+		                 | (clip->armState != ArmState::OFF ? kClipArmed : 0)
+		                 | (clip->soloingInSessionMode ? kClipSoloing : 0));
 	}
-	return clipStates.data();
+	return states.data();
 }
 
 // Audio frames per tick at the current tempo, to move play heads on between states.

@@ -4,6 +4,7 @@ import { pathKey } from "../card/references";
 import { findSample, isDocument, type UsageIndex } from "../card/usageIndex";
 import { collectDocumentFiles } from "../preview/documentFiles";
 import { Player } from "../preview/player";
+import { ArrangementView } from "./ArrangementView";
 import { DrumPads, Keyboard } from "./Audition";
 import { ClipSkeleton, ClipView } from "./ClipView";
 import { Deck, type PlayState, useRememberedFlag } from "./Deck";
@@ -287,10 +288,13 @@ function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
   // Auto-play presses play as soon as it's selected, and it starts once loaded.
   const [playing, setPlaying] = useState(autoPlay);
   const [loads, setLoads] = useState(0);
+  // Played to the end of its arrangement, and still ringing out until it's played again.
+  const [ended, setEnded] = useState(false);
   const player = loading.state === "ready" ? loading.player : undefined;
 
   useEffect(() => {
     setLoading({ state: "loading" });
+    setEnded(false);
     const failed = (message: string) => {
       setLoading({ state: "failed", message });
       setPlaying(false);
@@ -307,17 +311,24 @@ function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
     const context = audioContext();
     // Auto-play starts it without a click, which browsers allow once the page has had one.
     void context.resume();
-    player.start(context, (message) => {
-      setLoading({ state: "failed", message });
-      setPlaying(false);
-    });
+    player.start(
+      context,
+      (message) => {
+        setLoading({ state: "failed", message });
+        setPlaying(false);
+      },
+      () => {
+        setEnded(true);
+        setPlaying(false);
+      },
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, player]);
 
   function play() {
     // Resumed while handling the click, as browsers only allow it then.
     void audioContext().resume();
-    if (loading.state === "failed") setLoads(loads + 1);
+    if (loading.state === "failed" || ended) setLoads(loads + 1);
     setPlaying(true);
   }
 
@@ -344,7 +355,10 @@ function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
       />
       {loading.state === "failed" && <p className="notice error">{loading.message}</p>}
       {shown ? (
-        <ClipView card={card} player={shown} playing={!!started} audioContext={audioContext()} />
+        <>
+          {shown.song.tracks.length > 0 && <ArrangementView player={shown} playing={!!started} />}
+          <ClipView card={card} player={shown} playing={!!started} audioContext={audioContext()} />
+        </>
       ) : (
         loading.state === "loading" && <ClipSkeleton />
       )}

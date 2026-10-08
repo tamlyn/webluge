@@ -1,55 +1,49 @@
 import { type CSSProperties, type MouseEvent, useEffect, useRef, useState } from "react";
 import { baseName, type Card } from "../card/card";
-import type { ClipDescription, ClipState } from "../preview/firmware";
+import type { ClipDescription } from "../preview/firmware";
 import type { Player } from "../preview/player";
+import { usePlaybackState } from "./usePlaybackState";
 
 type Props = { card: Card; player: Player; playing: boolean; audioContext: AudioContext };
 
 // The song's session clips, like the Deluge's session view: each can be started, stopped or soloed while it plays.
+// While the arrangement plays, they show the clips it's playing, and a pad switches to the session, as on the device.
 export function ClipView({ card, player, playing, audioContext }: Props) {
   const { song } = player;
-  const [states, setStates] = useState<ClipState[]>();
   const playHeads = useRef<(HTMLDivElement | null)[]>([]);
+  const { arrangement, clips: states } = usePlaybackState(player, (now) =>
+    now.clips.forEach((state, i) => {
+      const head = playHeads.current[i];
+      if (head) head.style.left = `${(100 * state.pos) / song.clips[i].loopLength}%`;
+    }),
+  );
 
-  // Play heads move every frame, so they're set directly rather than through React.
-  useEffect(() => {
-    let frame = requestAnimationFrame(function update() {
-      const now = player.clipStates() ?? player.initialStates;
-      setStates((previous) => (previous && sameFlags(previous, now) ? previous : now));
-      now.forEach((state, i) => {
-        const head = playHeads.current[i];
-        if (head) head.style.left = `${(100 * state.pos) / song.clips[i].loopLength}%`;
-      });
-      frame = requestAnimationFrame(update);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [player, song]);
-
-  if (song.arrangement) {
-    return <p className="muted">This song plays its arrangement, so its clips can't be started and stopped here.</p>;
-  }
   if (!song.clips.length) return null;
   return (
     <>
       <div className="section-head">
         <h3 className="label">Clips</h3>
         <span className="hint">
-          {playing ? "Pad starts or stops at loop end · Shift + pad does it now" : "Play to start and stop clips"}
+          {!playing
+            ? "Play to start and stop clips"
+            : arrangement
+              ? "Pad switches to the session"
+              : "Pad starts or stops at loop end · Shift + pad does it now"}
         </span>
       </div>
       <ul className="clips">
         {song.clips.map((clip, i) => {
-          const state = states?.[i];
+          const state = states[i];
           const name = baseName(clip.name || clip.output) || clip.type;
           return (
             <li
               key={i}
-              className={`clip ${state?.active ? "active" : ""}`}
+              className={`clip ${state.active ? "active" : ""}`}
               style={{ "--clip-colour": clip.colour } as CSSProperties}
             >
               <button
-                className={`launch ${state?.armed ? "armed" : ""}`}
-                aria-label={`${state?.active ? "Stop" : "Start"} ${name}`}
+                className={`launch ${state.armed ? "armed" : ""}`}
+                aria-label={`${state.active ? "Stop" : "Start"} ${name}`}
                 title="Start or stop at the end of its loop. Shift-click to do it now."
                 disabled={!playing}
                 onClick={(event: MouseEvent) => player.toggleClip(i, event.shiftKey)}
@@ -58,7 +52,7 @@ export function ClipView({ card, player, playing, audioContext }: Props) {
                 <strong>{name}</strong>
                 <span className="label">
                   {clip.type}
-                  {state?.armed && (state.active ? " · stopping" : " · starting")}
+                  {state.armed && (state.active ? " · stopping" : " · starting")}
                 </span>
               </span>
               <div className="lane">
@@ -67,12 +61,12 @@ export function ClipView({ card, player, playing, audioContext }: Props) {
                 ) : (
                   <Notes clip={clip} ticksPerQuarterNote={song.ticksPerQuarterNote} />
                 )}
-                <div className="play-head" ref={(head) => void (playHeads.current[i] = head)} hidden={!playing || !state?.active} />
+                <div className="play-head" ref={(head) => void (playHeads.current[i] = head)} hidden={!playing || !state.active} />
               </div>
               <button
-                className={`solo ${state?.soloing ? "on" : ""}`}
+                className={`solo ${state.soloing ? "on" : ""}`}
                 aria-label={`Solo ${name}`}
-                aria-pressed={!!state?.soloing}
+                aria-pressed={state.soloing}
                 disabled={!playing}
                 onClick={() => player.soloClip(i)}
               >
@@ -105,10 +99,6 @@ export function ClipSkeleton() {
       </ul>
     </>
   );
-}
-
-function sameFlags(a: ClipState[], b: ClipState[]): boolean {
-  return a.every((s, i) => s.active === b[i].active && s.armed === b[i].armed && s.soloing === b[i].soloing);
 }
 
 const laneWidth = 800;

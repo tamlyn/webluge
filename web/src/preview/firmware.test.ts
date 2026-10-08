@@ -29,11 +29,17 @@ function load() {
   return readCard(card).then((files) => Firmware.loadSong(files, songPath, () => {}));
 }
 
-// The reference song as if saved in arranger view, which the firmware reads as playing its arrangement.
+// The reference song as if saved in arranger view, which the firmware reads as playing its arrangement, with an
+// arrangement of its first two clips one after the other. Each clip instance is its position, length and clip's
+// index, in hex.
+const loopLength = 384;
+const clipInstances = [0, loopLength, 0, loopLength, loopLength, 1].map((n) => n.toString(16).padStart(8, "0")).join("");
+
 async function loadInArrangerView() {
   const files = await readCard(card);
   const song = files.find((file) => file.path === songPath)!;
-  song.data = Buffer.from(song.data.toString().replace("<song", '<song inArrangementView="1"'));
+  const xml = song.data.toString().replace("<song", '<song inArrangementView="1"');
+  song.data = Buffer.from(xml.replace(/<kit\s/, `<kit clipInstances="0x${clipInstances}" `));
   return Firmware.loadSong(files, songPath, () => {});
 }
 
@@ -73,6 +79,66 @@ describe("Firmware", () => {
   it("describes a song saved in arranger view as playing its arrangement", async () => {
     const { song } = await loadInArrangerView();
     expect(song.arrangement).toBe(true);
+    expect(song.tracks).toHaveLength(1);
+    expect(song.tracks[0].type).toBe("kit");
+    expect(song.tracks[0].instances.map(([pos, length]) => [pos, length])).toEqual([
+      [0, loopLength],
+      [loopLength, loopLength],
+    ]);
+  });
+
+  it("describes a song without an arrangement as having no tracks", async () => {
+    const { song } = await load();
+    expect(song.tracks).toEqual([]);
+  });
+
+  it("plays the arrangement to its end, then stops", async () => {
+    const firmware = await loadInArrangerView();
+    const { state, framesPerTick } = firmware.render(1024);
+    expect(state).toMatchObject({ playing: true, arrangement: true });
+    firmware.render(loopLength * framesPerTick);
+    const later = firmware.render(1024).state;
+    expect(later.arrangementPos).toBeGreaterThanOrEqual(loopLength);
+    expect(later.clips[1].active).toBe(true);
+    firmware.render(loopLength * framesPerTick);
+    expect(firmware.render(1024).state.playing).toBe(false);
+  });
+
+  it("switches from the arrangement to the session, where its clips play on", async () => {
+    const firmware = await loadInArrangerView();
+    const { framesPerTick } = firmware.render(1024);
+    firmware.switchToSession();
+    const left = firmware.render(1024).state;
+    expect(left).toMatchObject({ playing: true, arrangement: false });
+    expect(left.clips[0].active).toBe(true);
+    // The session plays on past where the arrangement would have ended.
+    firmware.render(2 * loopLength * framesPerTick);
+    const { state } = firmware.render(1024);
+    expect(state).toMatchObject({ playing: true, arrangement: false, arrangementPos: left.arrangementPos });
+    expect(state.clips[0].active).toBe(true);
+  });
+
+  it("only switches to the session when a clip is toggled while the arrangement plays", async () => {
+    const firmware = await loadInArrangerView();
+    firmware.render(1024);
+    firmware.toggleClip(2, false);
+    const { state } = firmware.render(1024);
+    expect(state.arrangement).toBe(false);
+    expect(state.clips[2]).toMatchObject({ active: false, armed: false });
+  });
+
+  it("switches back to the arrangement from where it was left, at the end of the loop", async () => {
+    const firmware = await loadInArrangerView();
+    const { framesPerTick } = firmware.render(1024);
+    firmware.switchToSession();
+    const left = firmware.render(1024).state.arrangementPos;
+    firmware.switchToArrangement();
+    expect(firmware.render(1024).state).toMatchObject({ arrangement: false, switchingToArrangement: true });
+    firmware.render(loopLength * framesPerTick);
+    const { state } = firmware.render(1024);
+    expect(state).toMatchObject({ playing: true, arrangement: true, switchingToArrangement: false });
+    expect(state.arrangementPos).toBeGreaterThanOrEqual(left);
+    expect(state.arrangementPos).toBeLessThan(loopLength);
   });
 
   it("plays at the song's tempo", async () => {
@@ -83,22 +149,22 @@ describe("Firmware", () => {
 
   it("toggles a clip at the end of its loop", async () => {
     const firmware = await load();
-    const index = firmware.render(1024).clips.findIndex((clip) => clip.active);
+    const index = firmware.render(1024).state.clips.findIndex((clip) => clip.active);
     expect(index).toBeGreaterThanOrEqual(0);
     firmware.toggleClip(index, false);
     const armed = firmware.render(1024);
-    expect(armed.clips[index]).toMatchObject({ active: true, armed: true });
+    expect(armed.state.clips[index]).toMatchObject({ active: true, armed: true });
     const loopFrames = firmware.song.clips[index].loopLength * armed.framesPerTick;
     firmware.render(loopFrames);
-    expect(firmware.render(1024).clips[index]).toMatchObject({ active: false, armed: false });
+    expect(firmware.render(1024).state.clips[index]).toMatchObject({ active: false, armed: false });
   });
 
   it("toggles a clip straight away if instant", async () => {
     const firmware = await load();
-    const index = firmware.render(1024).clips.findIndex((clip) => clip.active);
+    const index = firmware.render(1024).state.clips.findIndex((clip) => clip.active);
     firmware.toggleClip(index, true);
     firmware.render(1024);
-    expect(firmware.render(1024).clips[index]).toMatchObject({ active: false, armed: false });
+    expect(firmware.render(1024).state.clips[index]).toMatchObject({ active: false, armed: false });
   });
 }, 60_000);
 

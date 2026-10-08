@@ -936,6 +936,60 @@ button.link:hover {
   background: var(--bright);
 }
 
+/* A song's arrangement */
+
+.tracks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.track {
+  display: grid;
+  grid-template-columns: 44px minmax(80px, 140px) minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 14px;
+}
+
+.track-name {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--soft);
+}
+
+.track-lane {
+  position: relative;
+  height: 20px;
+  background-color: var(--panel);
+  background-image: linear-gradient(to right, var(--grid-bar) 1px, transparent 1px);
+  background-size: var(--bar) 100%;
+  border: 1px solid #1a1a1d;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.instance {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  box-shadow: inset -1px 0 var(--panel);
+}
+
+/* The session has taken over, and the arrangement waits where it left it. */
+.tracks.left .instance {
+  opacity: 0.4;
+}
+
+.tracks.left .play-head {
+  background: var(--dim);
+}
+
 /* A kit's drums and a synth's keys, held to play */
 
 .drum-pads {
@@ -1055,6 +1109,13 @@ button.link:hover {
   .clip .lane {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+  .track {
+    grid-template-columns: minmax(60px, 100px) minmax(0, 1fr);
+    gap: 10px;
+  }
+  .track-name {
+    grid-column: 1;
   }
 }
 

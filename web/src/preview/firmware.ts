@@ -5,12 +5,14 @@ import { decodeCp437 } from "../card/cp437";
 
 export type CardFile = { path: string; data: Uint8Array };
 
-// A song's session clips, as the firmware loaded them. Positions and lengths are in ticks.
+// A song's session clips and arrangement, as the firmware loaded them. Positions and lengths are in ticks.
 export type SongDescription = {
-  // Songs saved in arranger view play their arrangement, which has no clips to toggle.
+  // Songs saved in arranger view start by playing their arrangement.
   arrangement: boolean;
   ticksPerQuarterNote: number;
   clips: ClipDescription[];
+  // Empty if the song has no arrangement.
+  tracks: TrackDescription[];
 };
 
 export type ClipDescription = {
@@ -26,13 +28,31 @@ export type ClipDescription = {
   sample?: { path: string; start: number; end: number; rate: number };
 };
 
+// An output's clips in the arrangement, coloured as on the arranger view's pads.
+export type TrackDescription = {
+  name: string;
+  type: ClipDescription["type"];
+  instances: [pos: number, length: number, colour: string][];
+};
+
 export type ClipState = { pos: number; active: boolean; armed: boolean; soloing: boolean };
+
+export type PlaybackState = {
+  // Until the arrangement plays to its end, which stops the song.
+  playing: boolean;
+  arrangement: boolean;
+  // Waiting for the longest clip playing to reach the end of its loop.
+  switchingToArrangement: boolean;
+  // Where the arrangement is, or was when the session took over.
+  arrangementPos: number;
+  clips: ClipState[];
+};
 
 export type Rendered = {
   left: Float32Array<ArrayBuffer>;
   right: Float32Array<ArrayBuffer>;
   // As the first frame played.
-  clips: ClipState[];
+  state: PlaybackState;
   framesPerTick: number;
 };
 
@@ -116,7 +136,7 @@ export class Firmware {
 
   // At least this many frames, as the codec plays in blocks.
   render(numFrames: number): Rendered {
-    const clips = this.clipStates();
+    const state = this.state();
     const framesPerTick = this.module._webluge_web_frames_per_tick();
     const start = this.module._webluge_web_render(numFrames) / Float32Array.BYTES_PER_ELEMENT;
     const length = this.module._webluge_web_rendered_frames();
@@ -127,10 +147,11 @@ export class Firmware {
       left[i] = interleaved[2 * i];
       right[i] = interleaved[2 * i + 1];
     }
-    return { left, right, clips, framesPerTick };
+    return { left, right, state, framesPerTick };
   }
 
-  // Quantised to the clip's loop, as on the device, unless instant.
+  // Quantised to the clip's loop, as on the device, unless instant. While the arrangement plays, toggling or soloing
+  // a clip only switches to the session, as on the device.
   toggleClip(index: number, instant: boolean) {
     this.module._webluge_web_toggle_clip(index, instant);
   }
@@ -139,16 +160,34 @@ export class Firmware {
     this.module._webluge_web_solo_clip(index);
   }
 
+  // As on the device: the clips the arrangement was playing play on in the session.
+  switchToSession() {
+    this.module._webluge_web_switch_to_session();
+  }
+
+  // From where the session took over, once the longest clip playing reaches the end of its loop.
+  switchToArrangement() {
+    this.module._webluge_web_switch_to_arrangement();
+  }
+
   // A preset's drum, by its row, or a synth's note, held until it's auditioned again with on false.
   audition(y: number, on: boolean) {
     this.module._webluge_web_audition(y, on);
   }
 
-  clipStates(): ClipState[] {
-    const start = this.module._webluge_web_clip_states() / Int32Array.BYTES_PER_ELEMENT;
-    return this.song.clips.map((_, i) => {
-      const flags = this.module.HEAP32[start + 2 * i + 1];
-      return { pos: this.module.HEAP32[start + 2 * i], active: !!(flags & 1), armed: !!(flags & 2), soloing: !!(flags & 4) };
-    });
+  state(): PlaybackState {
+    const heap = this.module.HEAP32;
+    const start = this.module._webluge_web_states() / Int32Array.BYTES_PER_ELEMENT;
+    const flags = heap[start];
+    return {
+      playing: !!(flags & 1),
+      arrangement: !!(flags & 2),
+      switchingToArrangement: !!(flags & 4),
+      arrangementPos: heap[start + 1],
+      clips: this.song.clips.map((_, i) => {
+        const clipFlags = heap[start + 2 * i + 3];
+        return { pos: heap[start + 2 * i + 2], active: !!(clipFlags & 1), armed: !!(clipFlags & 2), soloing: !!(clipFlags & 4) };
+      }),
+    };
   }
 }

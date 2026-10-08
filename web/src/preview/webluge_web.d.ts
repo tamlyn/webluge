@@ -17,7 +17,9 @@ declare module "@firmware/webluge_web.mjs" {
     _webluge_web_description_length(): number;
     _webluge_web_toggle_clip(index: number, instant: boolean): void;
     _webluge_web_solo_clip(index: number): void;
-    _webluge_web_clip_states(): number;
+    _webluge_web_switch_to_session(): void;
+    _webluge_web_switch_to_arrangement(): void;
+    _webluge_web_states(): number;
     _webluge_web_frames_per_tick(): number;
     _webluge_web_render(numFrames: number): number;
     _webluge_web_rendered_frames(): number;
