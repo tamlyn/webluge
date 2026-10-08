@@ -10,27 +10,19 @@ It's a work in progress. Most sounds match the device closely but not yet exactl
 
 ## Building
 
-The toolchain (Emscripten, CMake, Ninja, Node) is pinned in `mise.toml`.
+The toolchain (Emscripten, CMake, Ninja, Node) and tasks are in `mise.toml`.
 
 ```sh
 git clone --recurse-submodules git@github.com:tamlyn/webluge.git
 cd webluge
 mise install
-mise exec -- emcmake cmake -B build -G Ninja
-mise exec -- ninja -C build
-mise exec -- ctest --test-dir build
+mise run dev    # build the firmware and start the web app's dev server
+mise run test   # firmware and web app tests
+mise run build  # firmware and web app, into build and web/dist
 ```
 
-That also builds a Node CLI for loading and rendering songs offline. Run `mise exec -- node build/webluge.js` for usage.
-
-Then the web app:
-
-```sh
-cd web
-mise exec -- npm install
-mise exec -- npm run dev
-mise exec -- npm test
-```
+`mise tasks` lists the rest. The firmware build includes a Node CLI for loading and rendering songs offline. Run
+`mise exec -- node build/webluge.js` for usage.
 
 ## Firmware
 

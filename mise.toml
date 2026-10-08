@@ -4,3 +4,43 @@ emsdk = "6.0.11"
 cmake = "4.4.4"
 ninja = "1.13.2"
 uv = "0.12.23"
+
+# Ninja reruns CMake itself when CMakeLists.txt changes, so this only needs to run once.
+[tasks.configure]
+description = "Configure the firmware build"
+run = "emcmake cmake -B build -G Ninja"
+sources = ["CMakeLists.txt"]
+outputs = ["build/build.ninja"]
+
+[tasks."build:firmware"]
+description = "Build the firmware, Node CLI and tests"
+depends = ["configure"]
+run = "ninja -C build"
+
+[tasks.install]
+description = "Install the web app's dependencies"
+dir = "web"
+run = "npm install"
+sources = ["package.json", "package-lock.json"]
+outputs = { auto = true }
+
+[tasks."build:web"]
+description = "Build the web app into web/dist"
+depends = ["build:firmware", "install"]
+dir = "web"
+run = "npm run build"
+
+[tasks.build]
+description = "Build everything"
+depends = ["build:firmware", "build:web"]
+
+[tasks.dev]
+description = "Run the web app's dev server"
+depends = ["build:firmware", "install"]
+dir = "web"
+run = "npm run dev"
+
+[tasks.test]
+description = "Run the firmware and web app tests"
+depends = ["build:firmware", "install"]
+run = ["ctest --test-dir build", "npm --prefix web test"]
