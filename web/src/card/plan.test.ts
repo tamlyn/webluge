@@ -11,6 +11,7 @@ import {
   PlanError,
   planMoves,
   planNewFolder,
+  remaining,
 } from "./plan";
 import { run, RunStopped } from "./run";
 import { refreshIndex } from "./usageIndex";
@@ -318,6 +319,26 @@ describe("run", () => {
     expect(stopped.done.moves).toHaveLength(1);
     card.moveFile = moveFile;
     await run(card, inverse(stopped.done));
+    expect(snapshot(root)).toEqual(fixture);
+  });
+
+  it("runs on from where it stopped", async () => {
+    const { root, card, context } = await setup();
+    const plan = await planMoves(context, [drums]);
+    await run(card, plan);
+    const moved = snapshot(root);
+    const undo = inverse(plan);
+    const moveFile = card.moveFile.bind(card);
+    let moves = 0;
+    card.moveFile = async (from, to) => {
+      if (++moves === 2) throw new Error("File locked");
+      await moveFile(from, to);
+    };
+    const stopped: RunStopped = await run(card, undo).catch((error) => error);
+    expect(stopped.done.moves).toHaveLength(1);
+    expect(snapshot(root)).not.toEqual(moved);
+    card.moveFile = moveFile;
+    await run(card, remaining(undo, stopped.done));
     expect(snapshot(root)).toEqual(fixture);
   });
 });

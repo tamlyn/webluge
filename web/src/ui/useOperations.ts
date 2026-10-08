@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { Card } from "../card/card";
-import { type Context, inverse, type Plan } from "../card/plan";
+import { type Context, inverse, type Plan, remaining } from "../card/plan";
 import { run, RunStopped } from "../card/run";
 import type { UsageIndex } from "../card/usageIndex";
 import { documentsSummary } from "./words";
@@ -51,12 +51,12 @@ export function useOperations(
     }
   }
 
-  // Whether it changed the card, completely or partly. A run that stops partway is kept so it can be undone.
+  // What it changed on the card, if anything, and whether it finished.
   async function go(
     message: string,
     makePlan: (context: Context) => Promise<Plan>,
     confirm?: Confirm,
-  ): Promise<Plan | "partly" | undefined> {
+  ): Promise<{ done: Plan; finished: boolean } | undefined> {
     // First, while the click that started it still lets the browser ask.
     if (!(await card.writable())) {
       setStatus({ state: "failed", message: "Webluge needs permission to change the card" });
@@ -85,17 +85,17 @@ export function useOperations(
       const updated = documentsSummary(plan.rewrites.map((rewrite) => rewrite.path));
       setStatus({ state: "done", message: [message, updated && `updated ${updated}`].filter(Boolean).join(" · ") });
       onRun(plan);
-      return plan;
+      return { done: plan, finished: true };
     } catch (error) {
       setStatus({ state: "failed", message: `Stopped: ${errorMessage(error)}` });
       // Anything else comes from checking the card before the run, which changes nothing.
       if (!(error instanceof RunStopped) || isEmpty(error.done)) return;
       onRun(error.done);
-      setHistory((history) => [...history, { message: `${message} (stopped partway)`, undo: inverse(error.done) }]);
-      return "partly";
+      return { done: error.done, finished: false };
     } finally {
-      // By their paths before the moves: a document that moved is new to the index anyway.
-      await refresh(plan.rewrites.map((rewrite) => rewrite.path));
+      // By their paths before the moves: a document that moved is new to the index anyway. If it fails, that shows,
+      // and what ran still counts: the next change refreshes again before it plans.
+      await refresh(plan.rewrites.map((rewrite) => rewrite.path)).catch(() => {});
     }
   }
 
@@ -106,20 +106,22 @@ export function useOperations(
     canUndo: !busy && history.length > 0,
     perform: (message, makePlan, confirm) =>
       exclusively(async () => {
-        const plan = await go(message, makePlan, confirm);
-        if (!plan || plan === "partly") return;
-        setHistory((history) => [...history, { message, undo: inverse(plan) }]);
-        return plan;
+        const ran = await go(message, makePlan, confirm);
+        if (!ran) return;
+        const done = { message: ran.finished ? message : `${message} (stopped partway)`, undo: inverse(ran.done) };
+        setHistory((history) => [...history, done]);
+        return ran.finished ? ran.done : undefined;
       }),
+    // Whatever it doesn't get to stays, to undo once whatever stopped it is sorted out.
     undo: async () => {
       await exclusively(async () => {
         const last = history.at(-1);
         if (!last) return;
-        setHistory((history) => history.slice(0, -1));
-        const undone = await go(`Undone: ${last.message}`, async () => last.undo);
-        // Still there to undo if nothing changed.
-        if (!undone) setHistory((history) => [...history, last]);
-        else if (undone !== "partly") setStatus((status) => status && { ...status, fades: true });
+        const ran = await go(`Undone: ${last.message}`, async () => last.undo);
+        if (!ran) return;
+        const rest = { message: partlyUndone(last.message), undo: remaining(last.undo, ran.done) };
+        setHistory((history) => [...history.slice(0, -1), ...(ran.finished ? [] : [rest])]);
+        if (ran.finished) setStatus((status) => status && { ...status, fades: true });
       });
     },
   };
@@ -127,6 +129,11 @@ export function useOperations(
 
 function isEmpty(plan: Plan): boolean {
   return !plan.rewrites.length && !plan.newFolders.length && !plan.moves.length && !plan.oldFolders.length;
+}
+
+function partlyUndone(message: string): string {
+  const suffix = " (partly undone)";
+  return message.endsWith(suffix) ? message : `${message}${suffix}`;
 }
 
 function errorMessage(error: unknown): string {

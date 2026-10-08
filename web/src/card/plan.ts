@@ -368,3 +368,16 @@ export function inverse(plan: Plan): Plan {
     broken: [],
   };
 }
+
+// What a run that stopped partway didn't get to, to run on from there. It runs each field in order and stops at the
+// first step that fails, so what it did of each is from the start. The entries stay, for the app to follow if it
+// finishes.
+export function remaining(plan: Plan, done: Plan): Plan {
+  return {
+    ...plan,
+    rewrites: plan.rewrites.slice(done.rewrites.length),
+    newFolders: plan.newFolders.slice(done.newFolders.length),
+    moves: plan.moves.slice(done.moves.length),
+    oldFolders: plan.oldFolders.slice(done.oldFolders.length),
+  };
+}
