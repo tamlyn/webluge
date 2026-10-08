@@ -1,54 +1,64 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Card } from "./card/card";
 import { rememberedCard } from "./card/connect";
+import { planRelinks } from "./card/plan";
 import { refreshIndex, type UsageIndex } from "./card/usageIndex";
 import { sampleRate } from "./preview/firmware";
 import { Browser, type Selection } from "./ui/Browser";
 import { ConnectCard } from "./ui/ConnectCard";
 import { Details } from "./ui/Details";
-import { useSelection } from "./ui/route";
+import { MissingSamples } from "./ui/MissingSamples";
+import { useRoute } from "./ui/route";
+import { useOperations } from "./ui/useOperations";
 
 const root: Selection = { path: "", folder: true };
 
 export function App() {
   const [remembered, setRemembered] = useState<FileSystemDirectoryHandle>();
   const [card, setCard] = useState<Card>();
-  const [index, setIndex] = useState<UsageIndex>();
-  const [indexProgress, setIndexProgress] = useState<string>();
-  const [selection, navigate] = useSelection();
-  const audioContext = useRef<AudioContext>(undefined);
 
   useEffect(() => {
     rememberedCard().then(setRemembered, () => {});
   }, []);
 
-  useEffect(() => {
-    if (!card) return;
-    let current = true;
-    setIndex(undefined);
-    refreshIndex(card, undefined, (done, total) => current && setIndexProgress(`Indexing ${done} of ${total}`)).then(
-      (built) => {
-        if (!current) return;
-        setIndex(built);
-        setIndexProgress(undefined);
-      },
-      (error) => current && setIndexProgress(`Indexing failed: ${error}`),
-    );
-    return () => {
-      current = false;
-    };
-  }, [card]);
-
   if (!card) {
-    return (
-      <ConnectCard
-        remembered={remembered}
-        onConnect={(handle) => setCard(new Card(handle))}
-      />
-    );
+    return <ConnectCard remembered={remembered} onConnect={(handle) => setCard(new Card(handle))} />;
   }
+  return <CardView card={card} onEject={() => setCard(undefined)} />;
+}
 
+function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
+  const [index, setIndex] = useState<UsageIndex>();
+  const [indexProgress, setIndexProgress] = useState<string>();
+  const [route, navigate] = useRoute();
+  const audioContext = useRef<AudioContext>(undefined);
+  // The latest index, for refreshing from, however recently it was set.
+  const latest = useRef<UsageIndex>(undefined);
+
+  async function refresh(): Promise<UsageIndex> {
+    try {
+      const refreshed = await refreshIndex(card, latest.current, (done, total) => {
+        if (total) setIndexProgress(`Indexing ${done} of ${total}`);
+      });
+      latest.current = refreshed;
+      setIndex(refreshed);
+      setIndexProgress(undefined);
+      return refreshed;
+    } catch (error) {
+      setIndexProgress(`Indexing failed: ${error}`);
+      throw error;
+    }
+  }
+  const operations = useOperations(card, refresh);
+
+  useEffect(() => {
+    refresh().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selection = "view" in route ? root : route;
   const parts = selection.path ? selection.path.split("/") : [];
+  const status = operations.status;
   return (
     <div className="app">
       <header className="top">
@@ -57,6 +67,12 @@ export function App() {
           <button onClick={() => navigate(root)} title={card.name}>
             {card.name}
           </button>
+          {"view" in route && (
+            <>
+              <span aria-hidden="true">/</span>
+              <button onClick={() => navigate({ view: "missing" })}>Missing samples</button>
+            </>
+          )}
           {parts.map((part, i) => (
             <Fragment key={i}>
               <span aria-hidden="true">/</span>
@@ -73,10 +89,21 @@ export function App() {
         </nav>
         <div className="card-name">
           {indexProgress && <span>{indexProgress}</span>}
+          {status && (
+            <span className={`status ${status.state === "failed" ? "error" : ""}`} role="status">
+              {status.message}
+            </span>
+          )}
+          {operations.canUndo && (
+            <button className="text-button" onClick={operations.undo}>
+              Undo
+            </button>
+          )}
           <button
             className="key"
+            disabled={operations.running}
             onClick={() => {
-              setCard(undefined);
+              onEject();
               navigate(root);
             }}
           >
@@ -86,7 +113,18 @@ export function App() {
       </header>
       <div className="body">
         <Browser card={card} selection={selection} index={index} onSelect={navigate} />
-        {selection.folder ? (
+        {"view" in route ? (
+          <MissingSamples
+            card={card}
+            index={index}
+            busy={operations.running}
+            onRelink={(message, relinks) => operations.perform(message, (context) => planRelinks(context, relinks))}
+            onGoTo={(path) => navigate({ path, folder: false })}
+          />
+        ) : operations.running ? (
+          // Songs only ever load from a settled card.
+          <section className="details empty">Changing the card…</section>
+        ) : selection.folder ? (
           <section className="details empty">Pick a song or sample. The arrow keys move through the columns.</section>
         ) : (
           <Details

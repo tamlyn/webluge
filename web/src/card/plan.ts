@@ -178,24 +178,38 @@ export async function planMoves({ card, index }: Context, chosen: Move[]): Promi
   return plan;
 }
 
+// Points references that find nothing at a file found elsewhere on the card, each relink from a missing sample's path
+// to the file. References that still find a file are left alone.
+export async function planRelinks({ card, index }: Context, relinks: Move[]): Promise<Plan> {
+  const plan = emptyPlan();
+  const targets = new Map(relinks.map(({ from, to }) => [pathKey(from), to]));
+  const exists = existence(card);
+  for (const { to } of relinks) {
+    if (!(await exists(to))) throw new PlanError(`${baseName(to)} isn't on the card`);
+  }
+  const users = new Map(relinks.flatMap(({ from }) => index.usersOf.get(pathKey(from)) ?? []).map((u) => [pathKey(u), u]));
+  for (const path of users.values()) {
+    const text = await readDocument(card, path);
+    if (text === undefined) continue;
+    const edits: Edit[] = [];
+    for (const reference of findSampleReferences(text)) {
+      const to = targets.get(pathKey(reference.path));
+      if (to && !(await resolve(path, reference.path, exists))) edits.push({ ...reference, value: to });
+    }
+    if (edits.length) plan.rewrites.push({ path, before: text, after: applyEdits(text, edits) });
+  }
+  return plan;
+}
+
 // Rewrites each reference to a file that moves, unless it will still find the file where it is, as a reference to a
 // song's collected samples does when the folder goes with it. References that don't find a file already are left
 // alone. Nothing is rewritten for moves to and from the trash: a deleted sample goes missing.
 async function planRewrites(card: Card, index: UsageIndex, plan: Plan): Promise<void> {
   const movesFrom = new Map(plan.moves.map((move) => [pathKey(move.from), move]));
   const arriving = new Set(plan.moves.map((move) => pathKey(move.to)));
-  const known = new Map<string, Promise<boolean>>();
-  const existsBefore = (path: string) => {
-    if (!known.has(pathKey(path))) known.set(pathKey(path), card.exists(path));
-    return known.get(pathKey(path))!;
-  };
+  const existsBefore = existence(card);
   const existsAfter = async (path: string) =>
     arriving.has(pathKey(path)) || (!movesFrom.has(pathKey(path)) && (await existsBefore(path)));
-  const resolve = async (document: string, sample: string, exists: (path: string) => Promise<boolean>) => {
-    if (await exists(sample)) return sample;
-    const alternate = alternatePath(document, sample);
-    return alternate && (await exists(alternate)) ? alternate : undefined;
-  };
 
   // The documents that might refer to what moves: by its path before or after, as its collected samples, or itself.
   const affected = new Map<string, string>();
@@ -236,6 +250,29 @@ async function planRewrites(card: Card, index: UsageIndex, plan: Plan): Promise<
     if (edits.length) plan.rewrites.push({ path, before: text, after: applyEdits(text, edits) });
   }
   plan.broken = [...broken];
+}
+
+type Exists = (path: string) => Promise<boolean>;
+
+// Whether files are on the card, remembered while planning one change. Each folder is looked up once: looking up one
+// that's missing means listing the folder above it, to find it in another case, and many references can share it.
+function existence(card: Card): Exists {
+  const folders = new Map<string, Promise<boolean>>();
+  const files = new Map<string, Promise<boolean>>();
+  const remember = (known: Map<string, Promise<boolean>>, path: string, find: () => Promise<boolean>) => {
+    if (!known.has(pathKey(path))) known.set(pathKey(path), find());
+    return known.get(pathKey(path))!;
+  };
+  const folderExists = (path: string): Promise<boolean> =>
+    remember(folders, path, async () => !path || ((await folderExists(parentPath(path))) && (await card.kind(path)) === "folder"));
+  return (path) => remember(files, path, async () => (await folderExists(parentPath(path))) && card.exists(path));
+}
+
+// Where the firmware will find a document's sample: at its path, or among the document's collected samples.
+async function resolve(document: string, sample: string, exists: Exists): Promise<string | undefined> {
+  if (await exists(sample)) return sample;
+  const alternate = alternatePath(document, sample);
+  return alternate && (await exists(alternate)) ? alternate : undefined;
 }
 
 type Edit = { start: number; end: number; value: string };

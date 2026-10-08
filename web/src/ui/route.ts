@@ -2,14 +2,22 @@ import { useEffect, useState } from "react";
 import { baseName } from "../card/card";
 import type { Selection } from "./Browser";
 
-// The selection lives in the URL's hash, as GitHub Pages can't route other paths to the app. Folders end in "/".
+// The selection lives in the URL's hash, as GitHub Pages can't route other paths to the app. Folders end in "/". The
+// card-wide list of missing samples is "#missing", which no path can be, as paths start with "/".
 
-export function hashOf({ path, folder }: Selection): string {
+export type Route = Selection | { view: "missing" };
+
+const missingHash = "#missing";
+
+export function hashOf(route: Route): string {
+  if ("view" in route) return missingHash;
+  const { path, folder } = route;
   const encoded = path.split("/").map(encodeURIComponent).join("/");
   return `#/${encoded}${folder && path ? "/" : ""}`;
 }
 
-export function selectionOf(hash: string): Selection {
+export function routeOf(hash: string): Route {
+  if (hash === missingHash) return { view: "missing" };
   const rest = hash.replace(/^#\/?/, "");
   const folder = rest === "" || rest.endsWith("/");
   try {
@@ -19,9 +27,9 @@ export function selectionOf(hash: string): Selection {
   }
 }
 
-export type Navigate = (selection: Selection, options?: { replace?: boolean }) => void;
+export type Navigate = (route: Route, options?: { replace?: boolean }) => void;
 
-export function useSelection(): [Selection, Navigate] {
+export function useRoute(): [Route, Navigate] {
   const [hash, setHash] = useState(location.hash);
 
   useEffect(() => {
@@ -30,11 +38,12 @@ export function useSelection(): [Selection, Navigate] {
     return () => window.removeEventListener("popstate", update);
   }, []);
 
-  const selection = selectionOf(hash);
+  const route = routeOf(hash);
+  const name = "view" in route ? "Missing samples" : route.path && baseName(route.path);
 
   useEffect(() => {
-    document.title = selection.path ? `${baseName(selection.path)} · Webluge` : "Webluge";
-  }, [selection.path]);
+    document.title = name ? `${name} · Webluge` : "Webluge";
+  }, [name]);
 
   const navigate: Navigate = (next, { replace = false } = {}) => {
     const nextHash = hashOf(next);
@@ -44,5 +53,5 @@ export function useSelection(): [Selection, Navigate] {
     setHash(location.hash);
   };
 
-  return [selection, navigate];
+  return [route, navigate];
 }

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { type Card, baseName, parentPath } from "../card/card";
 import { pathKey } from "../card/references";
-import { isDocument, type UsageIndex } from "../card/usageIndex";
-import { collectSongFiles, findSample } from "../preview/songFiles";
+import { findSample, isDocument, type UsageIndex } from "../card/usageIndex";
+import { collectSongFiles } from "../preview/songFiles";
 import { SongPlayer } from "../preview/songPlayer";
 import { ClipSkeleton, ClipView } from "./ClipView";
 import { Deck, type PlayState, useRememberedFlag } from "./Deck";
@@ -10,6 +10,7 @@ import { isAudio, isSong } from "./files";
 import { Oled } from "./Oled";
 import { SamplePreview } from "./SamplePreview";
 import { useAsync } from "./useAsync";
+import { documentKind, plural } from "./words";
 
 type Props = {
   card: Card;
@@ -81,10 +82,6 @@ function withoutExtension(path: string): string {
   return baseName(path).replace(/\.[^.]*$/, "");
 }
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
 function SampleDetails({ card, path, index, audioContext, onGoTo }: Props) {
   const users = index && (index.usersOf.get(pathKey(path)) ?? []);
   const count = (folder: string) => users?.filter((user) => user.toUpperCase().startsWith(`${folder}/`)).length ?? 0;
@@ -105,10 +102,6 @@ function SampleDetails({ card, path, index, audioContext, onGoTo }: Props) {
       />
     </>
   );
-}
-
-function documentKind(path: string): string {
-  return path.split("/")[0].toLowerCase().replace(/s$/, "");
 }
 
 // A document's samples, and where on the card each one is, or null if it's missing.

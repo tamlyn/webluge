@@ -5,9 +5,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { baseName, Card } from "./card";
-import { fileAt, memoryFolder, type MemoryFiles, snapshot } from "./memoryFolder";
-import { inverse, type Plan, planDelete, planMoves } from "./plan";
-import { alternatePath, findPresetLinks, findSampleReferences } from "./references";
+import { fileAt, memoryFolder, type MemoryFiles, type MemoryFolderHandle, snapshot } from "./memoryFolder";
+import { findMissing, type Missing } from "./missing";
+import { inverse, type Plan, planDelete, planMoves, planRelinks } from "./plan";
+import { alternatePath, findPresetLinks, findSampleReferences, pathKey } from "./references";
 import { run } from "./run";
 import { isDocument, readDocument, refreshIndex, type UsageIndex } from "./usageIndex";
 
@@ -15,35 +16,10 @@ const cardFolder = process.env.WEBLUGE_CARD;
 
 describe.skipIf(!cardFolder)("Reorganising a real card", () => {
   it("keeps every reference finding the same file", async () => {
-    const files: MemoryFiles = {};
-    for (const entry of await readdir(cardFolder!, { recursive: true, withFileTypes: true })) {
-      if (!entry.isFile()) continue;
-      const path = relative(cardFolder!, join(entry.parentPath, entry.name));
-      files[path] = isDocument(path) ? new Uint8Array(await readFile(join(cardFolder!, path))) : new Uint8Array();
-    }
-    const root = memoryFolder(files);
-    const card = new Card(root as unknown as FileSystemDirectoryHandle);
+    const { files, root, card, startedAt } = await readCard();
     const original = snapshot(root);
-    // Each file by where it started, so that results read as paths.
-    const startedAt = new Map(Object.keys(files).map((path) => [fileAt(root, path)!, path]));
     let index = await refreshIndex(card, undefined, () => {});
-
-    // By document, the file each of its references finds.
-    const resolveAll = async () => {
-      const found = new Map<object, (string | undefined)[]>();
-      for (const { path } of index.documents.values()) {
-        const references = findSampleReferences((await readDocument(card, path))!);
-        found.set(
-          fileAt(root, path)!,
-          references.map(({ path: sample }) => {
-            const alternate = alternatePath(path, sample);
-            const file = fileAt(root, sample) ?? (alternate ? fileAt(root, alternate) : undefined);
-            return file && startedAt.get(file);
-          }),
-        );
-      }
-      return found;
-    };
+    const resolveAll = () => resolveReferences(card, root, index, startedAt);
     const before = await resolveAll();
 
     const plans: Plan[] = [];
@@ -75,9 +51,8 @@ describe.skipIf(!cardFolder)("Reorganising a real card", () => {
     const after = await resolveAll();
     let numReferences = 0;
     const lost = new Set<string>();
-    for (const [document, found] of before) {
-      const name = startedAt.get(document)!;
-      const now = after.get(document);
+    for (const [name, found] of before) {
+      const now = after.get(name);
       if (!now) continue;
       // A reference to the deleted sample finds nothing now, or the copy among the document's collected samples.
       const expected = found.map((file, i) => {
@@ -97,7 +72,81 @@ describe.skipIf(!cardFolder)("Reorganising a real card", () => {
     for (const plan of plans.reverse()) await run(card, inverse(plan));
     expect(snapshot(root)).toEqual(original);
   });
+
+  it("relinks a sample folder renamed outside the app, so every reference finds the same file", async () => {
+    const real = await readCard();
+    const index = await refreshIndex(real.card, undefined, () => {});
+    const folder = await mostUsed(real.card, index, (key) => key.match(/^(samples\/[^/]+)\//)?.[1]);
+    const renamed = `${folder} renamed`;
+    const rename = (path: string) => (path.startsWith(`${folder}/`) ? renamed + path.slice(folder.length) : path);
+    const before = await resolveReferences(real.card, real.root, index, real.startedAt);
+    const missingBefore = await findMissing(real.card, index);
+
+    const { root, card, startedAt } = await readCard(rename);
+    const original = snapshot(root);
+    let renamedIndex = await refreshIndex(card, undefined, () => {});
+    const missing = await findMissing(card, renamedIndex);
+    // Each sample once, with every user but those that find a copy among their collected samples.
+    const inFolder = missing.samples.filter(({ path }) => pathKey(path).startsWith(`${pathKey(folder)}/`));
+    expect(new Set(inFolder.map(({ path }) => pathKey(path))).size).toBe(inFolder.length);
+    for (const { path, users } of inFolder) {
+      const expected = index.usersOf.get(pathKey(path))!.filter((user) => !fileAt(root, alternatePath(user, path)!));
+      expect(users.sort()).toEqual(expected.sort());
+    }
+
+    const suggestion = missing.folders.find((relink) => same(relink.from, folder) && same(relink.to, renamed))!;
+    expect(suggestion.relinks.length).toBeGreaterThan(100);
+    const plan = await planRelinks({ card, index: renamedIndex }, suggestion.relinks);
+    for (const rewrite of plan.rewrites) expect(withoutLinks(rewrite.after)).toBe(withoutLinks(rewrite.before));
+    await run(card, plan);
+    renamedIndex = await refreshIndex(card, renamedIndex, () => {});
+
+    const after = await resolveReferences(card, root, renamedIndex, startedAt);
+    const expected = [...before].map(([path, found]) => [path, found.map((file) => file && rename(file))]);
+    expect(Object.fromEntries(after)).toEqual(Object.fromEntries(expected));
+    const paths = (missing: Missing) => missing.samples.map(({ path }) => path);
+    expect(paths(await findMissing(card, renamedIndex))).toEqual(paths(missingBefore));
+
+    await run(card, inverse(plan));
+    expect(snapshot(root)).toEqual(original);
+  });
 }, 300_000);
+
+// A copy of the card in memory, with each path as the rename given makes it.
+async function readCard(rename = (path: string) => path) {
+  const files: MemoryFiles = {};
+  for (const entry of await readdir(cardFolder!, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const path = relative(cardFolder!, join(entry.parentPath, entry.name));
+    files[rename(path)] = isDocument(path) ? new Uint8Array(await readFile(join(cardFolder!, path))) : new Uint8Array();
+  }
+  const root = memoryFolder(files);
+  const card = new Card(root as unknown as FileSystemDirectoryHandle);
+  // Each file by where it started, so that results read as paths.
+  const startedAt = new Map(Object.keys(files).map((path) => [fileAt(root, path)!, path]));
+  return { files, root, card, startedAt };
+}
+
+// By document, where it started, the file each of its references finds, by where that started.
+async function resolveReferences(card: Card, root: MemoryFolderHandle, index: UsageIndex, startedAt: Map<object, string>) {
+  const found = new Map<string, (string | undefined)[]>();
+  for (const { path } of index.documents.values()) {
+    const references = findSampleReferences((await readDocument(card, path))!);
+    found.set(
+      startedAt.get(fileAt(root, path)!)!,
+      references.map(({ path: sample }) => {
+        const alternate = alternatePath(path, sample);
+        const file = fileAt(root, sample) ?? (alternate ? fileAt(root, alternate) : undefined);
+        return file && startedAt.get(file);
+      }),
+    );
+  }
+  return found;
+}
+
+function same(a: string, b: string): boolean {
+  return pathKey(a) === pathKey(b);
+}
 
 // The path, as named on the card, of the samples or presets most used, grouped by the key given.
 async function mostUsed(card: Card, index: UsageIndex, group: (key: string) => string | undefined): Promise<string> {

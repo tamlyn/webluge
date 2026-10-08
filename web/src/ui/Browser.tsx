@@ -38,6 +38,9 @@ export function Browser({ card, selection, index, onSelect }: Props) {
           />
           Unused samples only
         </label>
+        <button className="text-button" disabled={!index} onClick={() => onSelect({ view: "missing" })}>
+          Missing samples
+        </button>
       </div>
       <div className="columns" ref={columns}>
         {folders.map((folder) => (

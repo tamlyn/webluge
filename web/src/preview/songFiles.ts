@@ -2,16 +2,9 @@
 // card's root. Copying only these keeps the card image small; a whole card can be many gigabytes.
 
 import { Card } from "../card/card";
-import { readDocument } from "../card/usageIndex";
-import { alternatePath, findSampleReferences } from "../card/references";
+import { findSampleReferences } from "../card/references";
+import { findSample, readDocument } from "../card/usageIndex";
 import type { CardFile } from "./firmware";
-
-// Where the firmware will find a song's sample, if it's on the card.
-export async function findSample(card: Card, songPath: string, samplePath: string): Promise<string | undefined> {
-  if (await card.exists(samplePath)) return samplePath;
-  const alternate = alternatePath(songPath, samplePath);
-  return alternate && (await card.exists(alternate)) ? alternate : undefined;
-}
 
 export async function collectSongFiles(card: Card, songPath: string): Promise<CardFile[]> {
   const xml = (await readDocument(card, songPath)) ?? "";

@@ -286,6 +286,12 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.browser-tools .text-button {
+  margin-left: auto;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
 .browser-tools input {
   width: 16px;
   height: 16px;
@@ -635,6 +641,79 @@ button.link:hover {
 
 .show-all {
   align-self: flex-start;
+}
+
+.link .text-button {
+  flex: none;
+  color: var(--accent);
+}
+
+.link .text-button:hover:not(:disabled) {
+  color: var(--bright);
+}
+
+/* A folder's missing samples, opened under it. */
+.missing-samples {
+  list-style: none;
+  margin: 0;
+  padding: 4px 12px 10px 28px;
+  display: grid;
+  gap: 10px;
+}
+
+.missing-samples li {
+  border: 0;
+  font-size: 12px;
+}
+
+.missing-name {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.missing-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 2px;
+}
+
+.missing-line .label {
+  flex: none;
+  width: 64px;
+  font-size: 10px;
+}
+
+.missing-line .label.missing {
+  width: auto;
+  color: var(--accent);
+}
+
+.missing-line .candidate {
+  min-width: 0;
+  color: var(--soft);
+  overflow-wrap: anywhere;
+}
+
+.missing-line .text-button {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+
+.missing-line .candidate + .text-button {
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+}
+
+.status {
+  max-width: 48ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A sample */

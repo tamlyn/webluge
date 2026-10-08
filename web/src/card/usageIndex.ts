@@ -1,6 +1,6 @@
 import { Card } from "./card";
 import { decodeCp437 } from "./cp437";
-import { findPresetLinks, findSampleReferences, pathKey, presetPath } from "./references";
+import { alternatePath, findPresetLinks, findSampleReferences, pathKey, presetPath } from "./references";
 
 // Which songs, kits and synths use which samples, and which kits and synths songs' instruments came from. It's a guide
 // to where to look: the card can change behind it, so anything that changes the card checks the card itself.
@@ -31,6 +31,13 @@ export function isDocument(path: string): boolean {
 export async function readDocument(card: Card, path: string): Promise<string | undefined> {
   const file = await card.file(path);
   return file && decodeCp437(new Uint8Array(await file.arrayBuffer()));
+}
+
+// Where the firmware will find a document's sample, if it's on the card.
+export async function findSample(card: Card, document: string, sample: string): Promise<string | undefined> {
+  if (await card.exists(sample)) return sample;
+  const alternate = alternatePath(document, sample);
+  return alternate && (await card.exists(alternate)) ? alternate : undefined;
 }
 
 // Rereads only the documents that are new or changed since the previous index.
