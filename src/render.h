@@ -11,7 +11,8 @@ void startPlayback();
 void run(uint64_t numFrames);
 
 // Exports a stem per clip, as the device's stem export does with its default settings, into the card's
-// SAMPLES/EXPORTS/<song name>/.
-void exportClipStems();
+// SAMPLES/EXPORTS/<song name>/. With song FX, as the device's "include song FX" setting, the stems include the reverb
+// and the song's own effects.
+void exportClipStems(bool includeSongFX = false);
 
 } // namespace webluge

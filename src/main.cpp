@@ -103,14 +103,14 @@ int render(const char* cardPath, const char* songPath, const char* wavPath, cons
 	return 0;
 }
 
-int exportStems(const char* cardPath, const char* songPath, const char* folder) {
+int exportStems(const char* cardPath, const char* songPath, const char* folder, bool includeSongFX) {
 	// Room for the stems.
 	constexpr uint64_t kExportBytes = 256 << 20;
 	webluge::CardImage card;
 	if (!bootAndLoad(cardPath, songPath, card, kExportBytes)) {
 		return 1;
 	}
-	webluge::exportClipStems();
+	webluge::exportClipStems(includeSongFX);
 	auto copied = webluge::copyFromCard("SAMPLES/EXPORTS", folder);
 	if (!copied) {
 		std::fprintf(stderr, "%s\n", copied.error().c_str());
@@ -130,7 +130,10 @@ int run(int argc, char** argv) {
 		return render(argv[2], argv[3], argv[4], argv[5]);
 	}
 	if (argc == 5 && !std::strcmp(argv[1], "export")) {
-		return exportStems(argv[2], argv[3], argv[4]);
+		return exportStems(argv[2], argv[3], argv[4], false);
+	}
+	if (argc == 6 && !std::strcmp(argv[1], "export") && !std::strcmp(argv[2], "--song-fx")) {
+		return exportStems(argv[3], argv[4], argv[5], true);
 	}
 	return usage();
 }

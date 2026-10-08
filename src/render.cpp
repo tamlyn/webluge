@@ -24,10 +24,11 @@ void run(uint64_t numFrames) {
 	yield([]() { return webluge_audio_frames_played() >= runUntil; });
 }
 
-void exportClipStems() {
+void exportClipStems(bool includeSongFX) {
 	// A device's card always has one. Stem export makes only the folders inside it, and without it never stops looking
 	// for a folder name it can create.
 	f_mkdir("SAMPLES");
+	stemExport.includeSongFX = includeSongFX;
 	stemExport.startStemExportProcess(StemExportType::CLIP);
 }
 

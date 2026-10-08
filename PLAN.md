@@ -26,11 +26,13 @@ Each checkpoint has a verification step that anyone can run. Tick a box only whe
   *Verify:* `git submodule status` shows `c23bc2fe`; a fresh clone with `--recurse-submodules` gets the firmware.
 - [x] **0.2 Toolchain.** Emscripten, Node, CMake and Ninja installed through mise, versions pinned in `mise.toml`.
   *Verify:* `mise install` then `mise exec -- emcc --version` and `mise exec -- node --version` match `mise.toml`.
-- [ ] **0.3 Reference recordings.** At least three test songs, each with its own samples, recorded on a real Deluge running firmware 1.2.1. Use stem export, which writes WAVs to the SD card. Choose the songs to cover:
+- [x] **0.3 Reference recordings.** At least three test songs, each with its own samples, recorded on a real Deluge running firmware 1.2.1. Use stem export, which writes WAVs to the SD card. Choose the songs to cover:
   - subtractive synth only (no reverb, no samples), as the integer-only case;
   - sample-based kit with timestretch;
   - FM (DX7), reverb, compressor and sidechain, as the float-heavy case.
-  
+
+  The subtractive synths and a kit without timestretch were made on the device. `scripts/make_reference_songs.py` writes the rest (see `reference/1.2.1/README.md`): synth engines, effects, the two reverbs, and samples with timestretch and sidechain.
+
   *Verify:* `reference/1.2.1/<song>/` contains the song XML, the samples and the device WAVs, and `reference/1.2.1/README.md` records the firmware version and export settings.
 
 ### Phase 1: Exact fixed-point maths
@@ -102,12 +104,12 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
   
   Record the numbers in Discoveries. If a song falls short, add a checkpoint to find the cause before moving on.
 
-  Short so far (see Discoveries), so 4.5–4.8 come first.
-- [ ] **4.5 Null-testable references.** Re-record the references on 1.2.1 with nothing random: every oscillator's retrigger phase set (e.g. 0°), and no noise, random LFOs or unison spread. The synths are done; left: re-export `Reference Kit 808` on 1.2.1, and take the noise out of `Reference Synth Sub`'s clip 5.
-  *Verify:* the README lists the songs' random sources as none, and every song as recorded on 1.2.1; 4.4 reruns on them.
-- [ ] **4.6 Residual that depends on render timing.** Find why the synths' plain clips null to only −38 to −58 dB although 67–95% of their samples are bit-identical, and why `Reference Kit 808`'s clips with several drums reach only −38 dB when the kick alone reaches −75 dB. In both, the error comes in short runs (in the synths, the 30 samples after each edge of a square wave), and the nulls move when only the export's timing changes, so look for state that runs freely with time, such as LFOs or the kit's flanger.
+  The device-made references fell short because of the ladder filter's noise (4.6). The generated references (0.3) pass both thresholds (see Discoveries). Left: the blind A/B listening check.
+- [x] **4.5 Null-testable references.** Re-record the references on 1.2.1 with nothing random: every oscillator's retrigger phase set (e.g. 0°), and no noise, random LFOs or unison spread. The device-made references can't null, as their ladder filters add noise (4.6); the generated ones (0.3) avoid it in every clip meant to null.
+  *Verify:* the README lists the random sources of each clip meant to null as none, and every song as recorded on 1.2.1; 4.4 reruns on them.
+- [x] **4.6 Residual that depends on render timing.** Find why the synths' plain clips null to only −38 to −58 dB although 67–95% of their samples are bit-identical, and why `Reference Kit 808`'s clips with several drums reach only −38 dB when the kick alone reaches −75 dB. In both, the error comes in short runs (in the synths, the 30 samples after each edge of a square wave), and the nulls move when only the export's timing changes, so look for state that runs freely with time, such as LFOs or the kit's flanger.
   *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
-- [ ] **4.8 Filter automation.** Find why clips automating the low-pass filter diverge as they go on: −32 dB for `Reference Synth Sub`'s clip 6 (cutoff), −6 dB for `Rsb`'s clip 2 (cutoff and resonance).
+- [x] **4.8 Filter automation.** Find why clips automating the low-pass filter diverge as they go on: −32 dB for `Reference Synth Sub`'s clip 6 (cutoff), −6 dB for `Rsb`'s clip 2 (cutoff and resonance).
   *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
 - [x] **4.7 Annoying Song level.** Find why the host's render of `test-songs/Annoying Song` runs 0.6–2.1 dB quieter than the device's recording, section by section.
   *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
@@ -173,7 +175,8 @@ Write access is asked for the first time an operation runs, so browsing stays re
 These are expected, and we accept them unless a listening test says otherwise.
 
 - **Render block size.** On the device it varies with CPU load, and modulation updates once per block. The host's comes from the scheduler on the virtual clock (windows of 12 and 20 frames during playback). Stem export's offline rendering uses fixed 32-frame windows on both. Expected effect: tiny, inaudible.
-- **Randomness.** The device seeds its random numbers from a timer at boot, so oscillators without a retrigger phase, random LFOs and noise start differently on every boot, on the device as on the host.
+- **Randomness.** The device seeds its random numbers from a timer at boot, so oscillators without a retrigger phase, random LFOs, noise, the transistor ladder low-pass filter's cutoff, DX7 voices without key sync and the timestretcher differ on every boot, on the device as on the host. The ladder filter runs in most synths and kits, since the default `y` cable to the cutoff turns it on even when fully open; it alone keeps the device-made references from nulling better than −4 to −75 dB, clip by clip, the same against a second host render as against the device (4.6).
+- **Free-running mod FX LFOs.** A synth's chorus, phaser or flanger LFO keeps time while the synth is silent, so its phase at any note depends on how long ago the song was loaded.
 - **Stem export length.** Stem export stops a stem after a render burst, so how far it runs past its end depends on CPU speed: up to about 800 frames different from the device with export to silence on, 1500 with it off.
 - **Voice culling.** An overloaded Deluge drops voices; the host won't, so heavy songs may sound cleaner than on the device. If this matters, we could model the device's CPU cost.
 - **Float maths** (reverbs, compressor, parts of DX7). The device firmware is built with `-funsafe-math-optimizations`, so GCC runs float maths on NEON (flushing denormals to zero) and may reassociate it. That can't be reproduced, and maths library functions differ too, so the last few bits may differ. The DX7 NEON kernel is the exception: it's hand-written assembly, so its float maths is exact (1.4).
@@ -224,6 +227,23 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
 
+- **2026-10-08** Generated references against the device (4.4), each recorded once on 1.2.1 and exported on the host at the default timing:
+  - Bit-identical: all five synth engine clips but the wavetable (DX7 on both engines, FM, ring mod), the delays, compressor, bitcrush, decimation, wavefold, SVF, high-pass and dry clips, the transposed snare and the sidechained pad. So FM and DX7, though float in places, are exact.
+  - Wavetable: −112 dB, 1,012 samples differing by at most 36 LSB of 24 bits. Not traced yet.
+  - Reverbs, with song FX: −87 dB for both Mutable and Freeverb, 92–93% of samples identical. The device's stem starts one sample earlier than the host's, then differs by a few LSB throughout, dry part included, so the song FX path isn't exact. Within Known differences (float maths), but the one-sample offset isn't explained.
+  - By ear, as expected: the ladder (−20.6 dB), chorus, stereo chorus and phaser (+1 to +3 dB), and the three timestretch clips (0 to +1 dB).
+- **2026-10-08** Residual that depends on render timing (4.6, 4.8): it's the transistor ladder low-pass filter, which adds lowpassed noise to its cutoff on every sample (`LpLadderFilter::do24dBLPFOnSample` and the 12 dB and drive variants). A sound runs its low-pass filter whenever its cutoff is below maximum or anything is patched to the cutoff, as the default `y` cable is, so it ran in every reference synth and drum.
+  - Two host exports with the virtual clock's cost per frame at 14 and at 10 cycles null against each other almost exactly as well as the host against the device, clip by clip: `Reference Synth Sub` −38 to −53 dB (−32.8 for the cutoff automation of clip 6), `Rsb` −44 to −58 dB (−4.1 for clip 2), `Reference Kit 808` −37 to −74 dB.
+  - With the noise taken out of the ladder (temporarily), both exports are bit-identical for every clip of all three songs but `Reference Synth Sub`'s noise oscillator clip. Taking out the kit's flanger instead changes nothing.
+  - So the host matches the device as closely as the device would match itself, and filter automation is fine. Added to Known differences; the generated references avoid the ladder except in a clip testing it.
+- **2026-10-08** Reference songs for the rest of 0.3, generated rather than made on the device, so each clip tests one thing. Exporting each on the host at both timings, as above, shows which can null at all; most clips are bit-identical across the two. The ones that aren't, and why:
+  - The ladder filter, as above.
+  - A synth's mod FX LFO runs on in time while the synth is silent: `Sound::stopSkippingRendering` advances it by the time since it stopped. So a chorus, phaser or flanger starts at a phase that depends on how long ago the song was loaded, on the device as on the host.
+  - The timestretcher randomises its first hop length and its search width (`TimeStretcher`).
+  - With "include song FX" on, the master compressor always runs and its state carries from one stem to the next, so only the first stem exported is reproducible. Each reverb gets a song of its own.
+  - A delay's tail can run on below the silence threshold into the next stem exported, so the delays are exported last.
+  - DX7 voices start at a random phase unless the patch has oscillator key sync on, and detune randomly per note if `dx7randomdetune` is set. The DX7 LFO runs freely. The patch picks the engine (modern NEON or MkI) by its algorithm and feedback unless `dx7enginemode` forces one.
+- **2026-10-08** `Reference Kit 808` re-exported on 1.2.1, with export to silence on (4.5): −74 dB for the kick-only clip, −38 to −47 dB for the others, 83–90% of samples bit-identical. Against the 1.2.0 stems the same host export gave the same nulls to within 1.2 dB, so the firmware version wasn't the cause of the residual (4.6).
 - **2026-10-08** Samples played off their own pitch:
   - `After Glow` (on the SD card, with a device recording of one loop in `SAMPLES/RESAMPLE/After Glow`) played about 40 dB quieter than the device, and `Annoying Song`'s pitched vocal and the upper notes of its piano chords were missing. Any sample played at another pitch goes through the windowed sinc interpolation, which reads a 16-sample buffer stored as four `int16x4_t`. The reader fills it by subscripting the first vector past its lanes (`interpolationBuffer[c][0][i]`), which GCC treats as memory but clang wraps to the vector's four lanes, so 12 of the 16 samples stayed zero. The `neon` golden test couldn't catch it: the intrinsics are exact, the subscripts aren't intrinsics. Fixed in the fork (see ARM_AUDIT.md), with a `sample` render test that plays a sample a fifth up: −43 dB before, −0.01 dB after.
   - This was 4.7's cause too. `Annoying Song` now matches the device's recording to 0.1 dB in every 10-second section, and `After Glow`'s loop to about 1 dB. `Reference Kit 808` nulls as before: its samples play at their own pitch.
