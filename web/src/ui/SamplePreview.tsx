@@ -1,25 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { type PointerEvent, useEffect, useRef, useState } from "react";
 import type { Card } from "../card/card";
-import { Oled } from "./Oled";
+import { Deck, useRememberedFlag } from "./Deck";
 
 type Props = { card: Card; path: string; title: string; audioContext: () => AudioContext };
 
-const autoPlayKey = "webluge.autoPlay";
-
-function rememberedAutoPlay(): boolean {
-  try {
-    return localStorage.getItem(autoPlayKey) !== "false";
-  } catch {
-    return true;
-  }
-}
-
-// A sample's waveform on the OLED, played when it's selected so a folder can be auditioned with the arrow keys.
+// A sample's waveform, played when it's selected so a folder can be auditioned with the arrow keys. Clicking or
+// dragging across the waveform plays from there.
 export function SamplePreview({ card, path, title, audioContext }: Props) {
   // Null if it can't be decoded.
   const [audio, setAudio] = useState<AudioBuffer | null>();
   const [playing, setPlaying] = useState(false);
-  const [autoPlay, setAutoPlay] = useState(rememberedAutoPlay);
+  const [autoPlay, toggleAutoPlay] = useRememberedFlag("webluge.autoPlay", true);
+  // When it would have started had it played from the beginning.
   const source = useRef<{ node: AudioBufferSourceNode; startedAt: number }>(undefined);
   const canvas = useRef<HTMLCanvasElement>(null);
   const position = useRef<HTMLSpanElement>(null);
@@ -64,7 +56,7 @@ export function SamplePreview({ card, path, title, audioContext }: Props) {
     };
   }, [audio, playing, audioContext]);
 
-  function play() {
+  function play(offset = 0) {
     if (!audio) return;
     stop();
     const context = audioContext();
@@ -72,8 +64,8 @@ export function SamplePreview({ card, path, title, audioContext }: Props) {
     const node = context.createBufferSource();
     node.buffer = audio;
     node.connect(context.destination);
-    node.start();
-    source.current = { node, startedAt: context.currentTime };
+    node.start(0, offset);
+    source.current = { node, startedAt: context.currentTime - offset };
     node.onended = () => {
       if (source.current?.node !== node) return;
       source.current = undefined;
@@ -89,13 +81,10 @@ export function SamplePreview({ card, path, title, audioContext }: Props) {
     setPlaying(false);
   }
 
-  function toggleAutoPlay() {
-    setAutoPlay(!autoPlay);
-    try {
-      localStorage.setItem(autoPlayKey, String(!autoPlay));
-    } catch {
-      // Not remembered, then.
-    }
+  function scrub(event: PointerEvent<HTMLCanvasElement>) {
+    if (!audio) return;
+    const { left, width } = event.currentTarget.getBoundingClientRect();
+    play(Math.min(1, Math.max(0, (event.clientX - left) / width)) * audio.duration);
   }
 
   const format =
@@ -104,7 +93,7 @@ export function SamplePreview({ card, path, title, audioContext }: Props) {
       : audio && `${audio.numberOfChannels === 1 ? "Mono" : "Stereo"} · ${audio.duration.toFixed(2)} s`;
   return (
     <>
-      <Oled
+      <Deck
         title={title}
         subtitle={format}
         readout={
@@ -115,8 +104,25 @@ export function SamplePreview({ card, path, title, audioContext }: Props) {
             </>
           )
         }
-      >
-        <canvas className="waveform" ref={canvas} role="img" aria-label={`Waveform of ${title}`} />
+        state={playing ? "playing" : "stopped"}
+        disabled={!audio}
+        onPlay={play}
+        onStop={stop}
+        autoPlay={autoPlay}
+        onToggleAutoPlay={toggleAutoPlay}
+      />
+      <div className="oled">
+        <canvas
+          className="waveform"
+          ref={canvas}
+          role="img"
+          aria-label={`Waveform of ${title}`}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            scrub(event);
+          }}
+          onPointerMove={(event) => event.currentTarget.hasPointerCapture(event.pointerId) && scrub(event)}
+        />
         {audio && (
           <div className="scale">
             {[0, 0.25, 0.5, 0.75, 1].map((f) => (
@@ -124,22 +130,6 @@ export function SamplePreview({ card, path, title, audioContext }: Props) {
             ))}
           </div>
         )}
-      </Oled>
-      <div className="transport">
-        <button
-          className={`pad ${playing ? "lit" : ""}`}
-          aria-label={playing ? "Stop" : "Play"}
-          disabled={!audio}
-          onClick={playing ? stop : play}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            {playing ? <rect x="5" y="5" width="14" height="14" /> : <path d="M7 4l13 8-13 8z" />}
-          </svg>
-        </button>
-        <button className="key" aria-pressed={autoPlay} onClick={toggleAutoPlay}>
-          Play on select: {autoPlay ? "on" : "off"}
-        </button>
-        <span className="label">↑ ↓ steps through the folder</span>
       </div>
     </>
   );

@@ -5,6 +5,7 @@ import { isDocument, type SampleIndex } from "../card/sampleIndex";
 import { collectSongFiles, findSample } from "../preview/songFiles";
 import { SongPlayer } from "../preview/songPlayer";
 import { ClipSkeleton, ClipView } from "./ClipView";
+import { Deck, type PlayState, useRememberedFlag } from "./Deck";
 import { isAudio, isSong } from "./files";
 import { Oled } from "./Oled";
 import { SamplePreview } from "./SamplePreview";
@@ -44,34 +45,23 @@ function plural(count: number, noun: string): string {
 }
 
 function SampleDetails({ card, path, index, audioContext, onGoTo }: Props) {
-  const users = index?.usersOf.get(pathKey(path)) ?? [];
-  const count = (folder: string) => users.filter((user) => user.toUpperCase().startsWith(`${folder}/`)).length;
+  const users = index && (index.usersOf.get(pathKey(path)) ?? []);
+  const count = (folder: string) => users?.filter((user) => user.toUpperCase().startsWith(`${folder}/`)).length ?? 0;
   const summary = [plural(count("SONGS"), "song"), plural(count("KITS"), "kit"), plural(count("SYNTHS"), "synth")];
   return (
     <>
       <SamplePreview card={card} path={path} title={withoutExtension(path)} audioContext={audioContext} />
-      <div className="section-head">
-        <h3 className="label">Used by {index && users.length}</h3>
-        {index && users.length > 0 && <span className="hint">{summary.join(" · ")}</span>}
-      </div>
-      {!index ? (
-        <p className="notice muted">Indexing…</p>
-      ) : users.length ? (
-        <ul className="tiles">
-          {users.map((user) => (
-            <li key={user}>
-              <button className="tile" onClick={() => onGoTo(user)}>
-                <span className={`tag ${documentKind(user)}`} />
-                <span className="tile-text">
-                  <span>{user.slice(user.indexOf("/") + 1).replace(/\.xml$/i, "")}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="notice muted">No songs, kits or synths</p>
-      )}
+      <LinkList
+        title="Used by"
+        hint={users?.length ? summary.join(" · ") : undefined}
+        links={users?.map((user) => ({
+          name: user.slice(user.indexOf("/") + 1).replace(/\.xml$/i, ""),
+          detail: documentKind(user),
+          to: user,
+        }))}
+        empty="No songs, kits or synths"
+        onGoTo={onGoTo}
+      />
     </>
   );
 }
@@ -101,55 +91,90 @@ function DocumentDetails({ card, path, index, onGoTo }: Props) {
   return (
     <>
       <Oled title={withoutExtension(path)} subtitle={`${documentKind(path)} · ${samplesSummary(samples)}`} />
-      <SampleTiles {...samples} onGoTo={onGoTo} />
+      <SampleList {...samples} onGoTo={onGoTo} />
     </>
   );
 }
 
-const collapsedTiles = 12;
+function SampleList({ samples, found, onGoTo }: ReturnType<typeof useSamples> & { onGoTo: (path: string) => void }) {
+  return (
+    <LinkList
+      title="Samples"
+      links={samples?.map((sample, i) => {
+        const missing = found && !found[i];
+        return {
+          name: baseName(sample),
+          detail: missing ? "Missing" : parentPath(sample).replace(/^SAMPLES\//i, ""),
+          to: found?.[i] ?? undefined,
+          missing,
+        };
+      })}
+      empty="No samples"
+      onGoTo={onGoTo}
+    />
+  );
+}
 
-function SampleTiles({
-  samples,
-  found,
+type Link = { name: string; detail: string; to?: string; missing?: boolean };
+
+const collapsedLinks = 12;
+
+// Songs, kits, synths or samples, one per line. Undefined links are still being indexed.
+function LinkList({
+  title,
+  hint,
+  links,
+  empty,
   onGoTo,
-}: ReturnType<typeof useSamples> & { onGoTo: (path: string) => void }) {
+}: {
+  title: string;
+  hint?: string;
+  links?: Link[];
+  empty: string;
+  onGoTo: (path: string) => void;
+}) {
   const [all, setAll] = useState(false);
-  if (!samples?.length) return null;
-  const showing = all ? samples : samples.slice(0, collapsedTiles);
+  const showing = all ? links : links?.slice(0, collapsedLinks);
   return (
     <>
       <div className="section-head">
-        <h3 className="label">Samples</h3>
-        {samples.length > collapsedTiles && (
-          <button className="text-button" onClick={() => setAll(!all)}>
-            {all ? "Show fewer" : `Show all ${samples.length}`}
-          </button>
-        )}
+        <h3 className="label">
+          {title} {links?.length || ""}
+        </h3>
+        {hint && <span className="hint">{hint}</span>}
       </div>
-      <ul className="tiles">
-        {showing.map((sample, i) => {
-          const location = found?.[i];
-          const text = (
-            <span className="tile-text">
-              <span>{baseName(sample)}</span>
-              <small className={found && !location ? "missing" : ""}>
-                {found && !location ? "Missing" : parentPath(sample).replace(/^SAMPLES\//i, "")}
-              </small>
-            </span>
-          );
-          return (
-            <li key={sample}>
-              {location ? (
-                <button className="tile" onClick={() => onGoTo(location)}>
-                  {text}
-                </button>
-              ) : (
-                <div className={`tile ${found ? "missing" : ""}`}>{text}</div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {!showing ? (
+        <p className="notice muted">Indexing…</p>
+      ) : !showing.length ? (
+        <p className="notice muted">{empty}</p>
+      ) : (
+        <ul className="links">
+          {showing.map((link, i) => {
+            const text = (
+              <>
+                <span className="link-name">{link.name}</span>
+                <span className={`link-detail ${link.missing ? "missing" : ""}`}>{link.detail}</span>
+              </>
+            );
+            return (
+              <li key={i}>
+                {link.to ? (
+                  <button className="link" onClick={() => onGoTo(link.to!)}>
+                    {text}
+                  </button>
+                ) : (
+                  <div className="link">{text}</div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {links && links.length > collapsedLinks && (
+        <button className="text-button show-all" onClick={() => setAll(!all)}>
+          {all ? "Show fewer" : `Show all ${links.length}`}
+        </button>
+      )}
     </>
   );
 }
@@ -162,9 +187,11 @@ const browseDelay = 250;
 function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
   const samples = useSamples(card, path, index);
   const [loading, setLoading] = useState<Loading>({ state: "loading" });
+  const [autoPlay, toggleAutoPlay] = useRememberedFlag("webluge.autoPlaySongs", false);
   // The latest song loaded, still shown while it loads again after stopping.
   const [shown, setShown] = useState<SongPlayer>();
-  const [playing, setPlaying] = useState(false);
+  // Auto-play presses play as soon as it's selected, and it starts once loaded.
+  const [playing, setPlaying] = useState(autoPlay);
   const [loads, setLoads] = useState(0);
   const player = loading.state === "ready" ? loading.player : undefined;
 
@@ -182,7 +209,9 @@ function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
           setLoading({ state: "ready", player: loaded });
           setShown(loaded);
         } catch (e) {
-          if (current) setLoading({ state: "failed", message: errorMessage(e) });
+          if (!current) return;
+          setLoading({ state: "failed", message: errorMessage(e) });
+          setPlaying(false);
         }
       },
       loads ? 0 : browseDelay,
@@ -197,7 +226,10 @@ function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
   // Play waits for the song to load.
   useEffect(() => {
     if (!playing || !player) return;
-    player.start(audioContext(), (message) => {
+    const context = audioContext();
+    // Auto-play starts it without a click, which browsers allow once the page has had one.
+    void context.resume();
+    player.start(context, (message) => {
       setLoading({ state: "failed", message });
       setPlaying(false);
     });
@@ -212,44 +244,33 @@ function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
   }
 
   function stop() {
-    if (!playing) return;
     setPlaying(false);
     setLoads(loads + 1);
   }
 
   const started = playing ? player : undefined;
+  const state: PlayState = started ? "playing" : playing ? "starting" : "stopped";
   const song = shown?.song;
   const mode = song && (song.arrangement ? "Arranger" : `Session · ${plural(song.clips.length, "clip")}`);
   return (
     <>
-      <div className="deck">
-        <Oled
-          title={withoutExtension(path)}
-          subtitle={[mode, samplesSummary(samples)].filter(Boolean).join(" · ")}
-          readout={started && <Tempo player={started} />}
-        />
-        <button
-          className={`pad ${started ? "lit" : playing ? "busy" : ""}`}
-          aria-label="Play"
-          onClick={() => !playing && play()}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M7 4l13 8-13 8z" />
-          </svg>
-        </button>
-        <button className="pad" aria-label="Stop" onClick={stop}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="5" y="5" width="14" height="14" />
-          </svg>
-        </button>
-      </div>
+      <Deck
+        title={withoutExtension(path)}
+        subtitle={[mode, samplesSummary(samples)].filter(Boolean).join(" · ")}
+        readout={started && <Tempo player={started} />}
+        state={state}
+        onPlay={play}
+        onStop={stop}
+        autoPlay={autoPlay}
+        onToggleAutoPlay={toggleAutoPlay}
+      />
       {loading.state === "failed" && <p className="notice error">{loading.message}</p>}
       {shown ? (
         <ClipView card={card} player={shown} playing={!!started} audioContext={audioContext()} />
       ) : (
         loading.state === "loading" && <ClipSkeleton />
       )}
-      <SampleTiles {...samples} onGoTo={onGoTo} />
+      <SampleList {...samples} onGoTo={onGoTo} />
     </>
   );
 }

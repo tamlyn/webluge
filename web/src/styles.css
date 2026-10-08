@@ -477,12 +477,40 @@ button:disabled {
 }
 
 .deck .oled {
-  flex: 1 1 380px;
+  flex: 1 1 240px;
+}
+
+.deck .controls {
+  display: flex;
+  gap: 10px;
 }
 
 .deck .pad {
   width: 76px;
   min-height: 64px;
+}
+
+.deck .key {
+  height: auto;
+  min-height: 64px;
+  width: 76px;
+  padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.key[aria-pressed="true"] {
+  color: var(--bright);
+}
+
+.key[aria-pressed="true"] .led {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .section-head {
@@ -511,72 +539,63 @@ button:disabled {
   color: var(--soft);
 }
 
-/* Links to songs, kits, synths and samples, as tiles. */
-.tiles {
+/* Links to songs, kits, synths and samples, one per line. */
+.links {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 6px;
+  border-top: 1px solid var(--line);
 }
 
-.tile {
+.links li {
+  border-bottom: 1px solid var(--line);
+}
+
+.link {
   width: 100%;
-  height: 100%;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
+  align-items: baseline;
+  gap: 16px;
+  padding: 7px 12px;
+  border: 0;
+  background: none;
   color: var(--text);
   font-size: 12px;
   text-align: left;
 }
 
-button.tile:hover {
-  border-color: var(--line-strong);
+button.link:hover {
   background: var(--hover);
+  color: var(--bright);
 }
 
-.tile .tag {
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 2px;
-  background: var(--soft);
-}
-
-.tile .tag.kit {
-  background: var(--accent);
-}
-
-.tile .tag.synth {
-  background: #4aa8ff;
-}
-
-.tile-text {
-  display: flex;
-  flex-direction: column;
+.link-name,
+.link-detail {
   min-width: 0;
-}
-
-.tile-text > * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tile-text small {
-  font-size: 10px;
-  color: var(--dim);
-  letter-spacing: 0.04em;
+.link-name {
+  flex: 1 1 auto;
 }
 
-.tile.missing {
-  border-color: rgb(255 106 43 / 40%);
+.link-detail {
+  flex: 0 1 auto;
+  max-width: 50%;
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.link-detail.missing {
+  color: var(--accent);
+}
+
+.show-all {
+  align-self: flex-start;
 }
 
 /* A sample */
@@ -585,6 +604,8 @@ button.tile:hover {
   display: block;
   width: 100%;
   height: 200px;
+  cursor: pointer;
+  touch-action: none;
 }
 
 .scale {
@@ -592,22 +613,6 @@ button.tile:hover {
   justify-content: space-between;
   font-size: 11px;
   color: var(--dim);
-}
-
-.transport {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.transport .pad {
-  width: 64px;
-  height: 64px;
-}
-
-.transport .key {
-  height: 64px;
 }
 
 /* A song's clips */
