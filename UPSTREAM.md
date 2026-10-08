@@ -72,3 +72,4 @@ Starting point. Patches on `webluge/1.2.1`:
 - `seam:` `ffconf.h` lets the host build enable `f_mkfs`, to format card images.
 - `seam:` The task scheduler calls `webluge_scheduler_idle` when nothing is due, so the host's virtual clock can move on.
 - `upstreamable:` `Sample::fillPercCache` no longer divides by zero in digital silence, and gives the result libgcc's division gives on the device.
+- `upstreamable:` The sample reader and live pitch shifter keep their interpolation buffers as `int16_t` arrays, rather than writing samples past the lanes of an `int16x4_t`, which clang wraps.

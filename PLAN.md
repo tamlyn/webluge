@@ -109,7 +109,7 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
   *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
 - [ ] **4.8 Filter automation.** Find why clips automating the low-pass filter diverge as they go on: −32 dB for `Reference Synth Sub`'s clip 6 (cutoff), −6 dB for `Rsb`'s clip 2 (cutoff and resonance).
   *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
-- [ ] **4.7 Annoying Song level.** Find why the host's render of `test-songs/Annoying Song` runs 0.6–2.1 dB quieter than the device's recording, section by section.
+- [x] **4.7 Annoying Song level.** Find why the host's render of `test-songs/Annoying Song` runs 0.6–2.1 dB quieter than the device's recording, section by section.
   *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
 
 ### Phases 5 and 6: dropped
@@ -223,6 +223,10 @@ These are expected, and we accept them unless a listening test says otherwise.
 ## Discoveries
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
+
+- **2026-10-08** Samples played off their own pitch:
+  - `After Glow` (on the SD card, with a device recording of one loop in `SAMPLES/RESAMPLE/After Glow`) played about 40 dB quieter than the device, and `Annoying Song`'s pitched vocal and the upper notes of its piano chords were missing. Any sample played at another pitch goes through the windowed sinc interpolation, which reads a 16-sample buffer stored as four `int16x4_t`. The reader fills it by subscripting the first vector past its lanes (`interpolationBuffer[c][0][i]`), which GCC treats as memory but clang wraps to the vector's four lanes, so 12 of the 16 samples stayed zero. The `neon` golden test couldn't catch it: the intrinsics are exact, the subscripts aren't intrinsics. Fixed in the fork (see ARM_AUDIT.md), with a `sample` render test that plays a sample a fifth up: −43 dB before, −0.01 dB after.
+  - This was 4.7's cause too. `Annoying Song` now matches the device's recording to 0.1 dB in every 10-second section, and `After Glow`'s loop to about 1 dB. `Reference Kit 808` nulls as before: its samples play at their own pitch.
 
 - **2026-10-08** Delete (8.4):
   - The first delete put `TRASH` in the root column, and `homeOf("TRASH")` crashed the app (nothing left after taking off the trash). Fixed, with a test, but a render error still blanks the whole app: worth an error boundary.
