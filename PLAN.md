@@ -13,7 +13,7 @@ Keep our changes to the firmware small and replayable, so that a new upstream re
 ## Non-goals (for now)
 
 - Native Mac app. arm64 macOS has no 32-bit mode, and the firmware assumes 32-bit pointers. wasm32 matches.
-- Editing songs, the pad/button UI, MIDI, recording, saving. The one exception is rewriting sample paths when samples move (7.3).
+- Editing songs, the pad/button UI, MIDI, recording, saving. The one exception is rewriting the paths and preset links in songs, kits and synths when files move (Phase 8).
 - Modelling the device's analogue output stage.
 
 ## Phases and checkpoints
@@ -112,25 +112,13 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
 - [ ] **4.7 Annoying Song level.** Find why the host's render of `test-songs/Annoying Song` runs 0.6–2.1 dB quieter than the device's recording, section by section.
   *Verify:* the cause is named in Discoveries, and either fixed or added to Known differences.
 
-### Phase 5: Real-time playback in the browser
+### Phases 5 and 6: dropped
 
-- [ ] **5.1 Threading.** The firmware runs in a Web Worker; an AudioWorklet pulls audio from it through a lock-free ring buffer in a SharedArrayBuffer. The dev server sends the COOP/COEP headers that SharedArrayBuffer requires.
-  *Verify:* `crossOriginIsolated === true` in the page, and the metronome plays in real time.
-- [ ] **5.2 Song playback.** Play the reference songs in real time, with the song loaded from a bundled image.
-  *Verify:* each reference song plays through in current Chrome and Safari with no underruns, counted by the worklet, and the worker uses less than 50% of one core (measured).
-- [ ] **5.3 Real-time matches offline.** Real-time and offline renders of the same song produce the same output.
-  *Verify:* capture the worklet's output and null-test it against the Phase 4 WAV; the residual must be identical, given the same block size.
-
-### Phase 6: Load your own songs
-
-- [ ] **6.1 Drop a folder.** Drag in a Deluge SD card folder (or pick it), build the FAT image in the browser, list the songs and play one.
-  *Verify:* dropping a copy of a real SD card folder lists every song in `SONGS/`, and a chosen song plays with its samples.
-- [ ] **6.2 Transport.** Play, stop and restart from the beginning.
-  *Verify:* stopping and replaying gives the same output as the first play (null test on the captured output).
+Real-time playback on an AudioWorklet (5) and loading your own songs (6) were overtaken by the card browser (Phase 7), which opens a card and plays its songs by rendering ahead in a worker. See Decisions.
 
 ### Phase 7: Card browser
 
-A web app (`web/`) that opens an SD card, or a copy of one, through the File System Access API (Chrome and Edge only), to browse it and preview its songs and samples. Ahead of Phase 5: it previews songs by rendering them in a worker as they play, not in real time on an AudioWorklet.
+A web app (`web/`) that opens an SD card, or a copy of one, through the File System Access API (Chrome and Edge only), to browse it and preview its songs and samples. It previews songs by rendering them in a worker as they play, not in real time on an AudioWorklet.
 
 Build the firmware first (Phase 2), then `cd web && mise exec -- npm install && mise exec -- npm run dev`. Tests: `mise exec -- npm test`.
 
@@ -140,8 +128,41 @@ Build the firmware first (Phase 2), then `cd web && mise exec -- npm install && 
   *Verify:* `npm test` loads `Reference Kit 808` in the browser build under Node and renders a second that isn't silent. In Chrome, the reference songs and `Annoying Song` (294MB, 179 samples) play, and a song with a sample deleted plays without it and reports it missing.
 - [x] **7.4 Toggle clips.** While a session-mode song plays, show its clips as the session view does: one row each, with its notes (or its sample's waveform, for an audio clip) across one loop and a play head. Each clip can be started, stopped or soloed through the firmware's own session code (`Session::toggleClipStatus`, `soloClipAction`), so a toggle waits for the end of the clip's loop as on the device, or happens at once with shift. The worker renders 2048 frames at a time, 150ms ahead, so toggles are heard promptly. Arranger songs aren't covered: they show a note instead. Toggles are never saved.
   *Verify:* `npm test` starts and stops a clip of `Reference Kit 808` in the browser build under Node, quantised and instant. In Chrome, on `Reference Kit 808` and `Swinging In The Rain` (from `~/music/Deluge`, with an audio clip): an armed clip blinks until its loop ends, then starts, stopping the clip on the same instrument; play heads follow each clip's own loop; the audio clip shows its waveform; and 8 seconds of `Annoying Song` play with no chunk scheduled late (at least 135ms ahead).
-- [ ] **7.3 Move samples.** Move or rename samples and folders of samples, rewriting the paths in every song, kit and synth that refers to them. Needs the card opened read-write.
-  *Verify:* after moving samples used by several songs, each song loads in the CLI (`webluge load`) with no missing audio files, and each rewritten XML differs from its original only in the moved paths.
+- 7.3 Move samples: now Phase 8.
+
+### Phase 8: Organise the card
+
+Reorganise songs, kits, synths and samples, delete what's no longer wanted, make folders, and find missing samples, all without breaking the songs, kits and synths that refer to them.
+
+The card on disk is the only source of truth. The sample index (7.1) is a hint about where to look, and nothing is trusted from it when changing files. Each gesture (a drag, a rename, a new folder, a delete) is one plan, which goes through one pipeline, from choosing it to it finishing, in a few seconds; nothing is ever pending, so browsing and playing carry on between them as usual.
+
+- **Refresh.** Before planning, the index catches up with the card: it checks every song, kit and synth's size and modification time, and rereads the ones that are new or changed. The card holds about 1,200 of them, 44MB of XML, so rereading everything each time would be slow.
+- **Plan.** A pure function turns an operation (move, rename, delete, new folder) and the documents just read into a plan: file moves, folders to make and remove, and XML rewrites. Rewrites change only the paths and preset attributes, found by pattern with their positions (as in `references.ts`), and are encoded back to code page 437, so everything else stays byte for byte. Whether a reference resolves is checked on disk, for the references the operation affects.
+- **Confirm.** A plan that does more than move, rename or make what the user chose asks first, saying what else it will do: "Also updates 14 songs and 2 kits", "Also moves the song's samples folder", or for a delete, which songs will lose the sample. Otherwise it runs at once.
+- **Run.** XML rewrites go first, then new folders, file moves, and last the removal of the folders the moves emptied, so the whole plan can be checked against the card before it changes anything. Then each step checks, on disk and just before it acts, the state the plan expects, and stops the run if it differs. No step can destroy anything: a move refuses an existing destination, a rewrite goes ahead only if the file still holds the text the plan read, and a folder is removed only if it's empty (`removeEntry` without `recursive`). Each XML file is written through `createWritable`, which swaps the file in on commit. A run that stops reports exactly what it did. Songs can't be loaded while a run is going, so playback only ever sees a settled card.
+- **Afterwards.** The index refreshes from the card, as before planning, rather than being patched from the plan, so there's only one way it gets updated.
+- **Undo.** Each plan that runs keeps its inverse (moves reversed, the original XML text), so the last few operations can be undone within the session, newest first. An undo is a plan like any other, with the same checks. After each run, a line says what it did, with an Undo button: "Moved Kick.wav · updated 14 songs · Undo".
+
+If a run stops partway (an error, a closed tab), some documents have new paths whose samples haven't moved yet. The runner reports what it did as a plan, which undoes like any other; failing that, the references show up as missing, and 8.2 relinks them by name.
+
+Rules every plan follows:
+
+- A song, kit or synth moves with its collected-samples folder beside it (`SONGS/Foo.XML` with `SONGS/Foo/`), and a reference that resolves there before the move still does after it.
+- A reference whose file moves is rewritten to the file's new path. References that already don't resolve are left alone.
+- When a kit or synth moves, songs whose instrument links to it (`presetFolder` and `presetName`) get the new folder; when it's renamed, the new name too. Each of the instrument's clips links to it the same way (`instrumentPresetFolder`, `instrumentPresetName`), and the firmware won't load a song whose clips don't match an instrument, so a song's links all change together or not at all. They don't change if any link with that name has no folder (songs saved before firmware 4.0), if the song already has an instrument with the new name, or if the song names presets by number (`presetSlot`). Out-of-date links still load.
+- Things move only within their own top folder (`SONGS`, `KITS`, `SYNTHS`, `SAMPLES`), where the device's browsers can see them, or into and out of `TRASH`.
+- New names are legal FAT names, encodable in code page 437, and don't clash, ignoring case, with a name already in the folder.
+
+Write access is asked for the first time an operation runs, so browsing stays read-only.
+
+- [x] **8.1 Planner and runner.** The refresh, planner, runner and undo, with no UI beyond what tests need. Tests run `Card` itself on an in-memory stand-in for the File System Access API (`memoryFolder.ts`).
+  *Verify:* `npm test` checks plans against fixtures: moving a sample folder rewrites exactly the references to it in songs, kits and synths; moving a song takes its collected folder and its samples still resolve; renaming a kit updates the songs linked to it; and an undo restores every file byte for byte. It also changes the in-memory card between planning and running (a document edited, a destination taken, a source gone, a file appearing), and each run stops having changed nothing; a run that fails partway undoes. The firmware loads `Reference Kit 808` after its samples move and its kit is renamed, with no missing samples and the same clips, and refuses it if only the instrument's link changes. With `WEBLUGE_CARD` set to a copy of a card, a test moves its most used sample folder, renames its most used preset, moves a song with collected samples and deletes its most used sample, then checks that every reference still finds the same file (or, for the deleted sample, a collected copy or nothing, as the plan warned), that rewrites change nothing but paths and links, and that undoing all four restores the card byte for byte.
+- [ ] **8.2 Missing samples.** A card-wide list of missing samples: each missing path once, with the songs, kits and synths that use it and candidates on the card with the same file name. Relink one sample, or a whole folder at once when its samples turn up under another folder with the same names.
+  *Verify:* on a copy of the card with a samples folder renamed outside the app, the list shows each of its samples once with every user, offers the renamed folder, and relinking it leaves every affected song loading in the CLI with none missing.
+- [ ] **8.3 Move, rename and new folder.** Select several entries in a column (Cmd- and Shift-click, Shift with the arrow keys), then drag them onto a folder in any column or the path bar, or use "Move to…". Rename and New folder sit in the browser's toolbar.
+  *Verify:* the first runs on Chrome's own File System Access API, which the tests stand in for: on a copy of a card in Chrome, moving an unused sample and making a folder run without asking; moving a sample folder, a song with a collected folder and a kit used by songs each asks first, with counts that match the files that change, leaves the songs playing in the app with nothing missing, and undoes cleanly.
+- [ ] **8.4 Delete.** Delete (Cmd-Backspace) moves entries into `TRASH/` at the card's root, keeping their paths, so it can be undone, and restoring is a move back. Deleting something in use lists its users first. The app never deletes for good: emptying `TRASH` is left to the user, outside the app.
+  *Verify:* in Chrome, a deleted sample shows as missing in its songs and comes back with undo; a deleted song takes its collected folder.
 
 ## Known differences from the device
 
@@ -157,6 +178,13 @@ These are expected, and we accept them unless a listening test says otherwise.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-10-08 | Drop Phases 5 (real-time playback on an AudioWorklet) and 6 (load your own songs) | Phase 7 does both jobs: rendering ahead plays smoothly without SharedArrayBuffer or COOP/COEP headers, and the card browser opens a card and plays any song on it. That gives up drag-and-drop and browsers without the File System Access API. Revisit real-time playback if previews underrun |
+| 2026-10-08 | Each gesture is one plan that runs at once. It asks first only if it does more than move, rename or make what the user chose (rewriting documents, moving a collected folder, leaving references missing) | With undo, a confirmation on every drag would only slow things down. Side effects are what the user can't see from the gesture itself |
+| 2026-10-08 | Deleting moves to `TRASH/` on the card, and operations can be undone within the session. The app has no way to empty the trash | The File System Access API deletes for good, with no system trash. As a move, a delete is undone like any other operation, and the app can't lose anything for good |
+| 2026-10-08 | Moving or renaming a kit or synth updates the preset links (`presetFolder`, `presetName`) of songs using it | Songs still load without it, but the device's preset browser and saving would use the old folder. Renaming changes the instrument's name in those songs, which is the point of keeping the link |
+| 2026-10-08 | Entries move only within their own top folder, or into and out of `TRASH` | A song outside `SONGS` (and the same for kits, synths and samples) is invisible to the device's browsers |
+| 2026-10-08 | All card changes go through a planner, then a runner that rewrites XML first, then makes folders, moves files and removes emptied folders | Tests run the planner and runner on an in-memory card, the same plan feeds the confirmation and undo, and with rewrites first every check can be made against the card before anything changes |
+| 2026-10-08 | The card on disk is the only truth: plans are made from freshly read documents and run at once, each step checks the disk before acting and none can overwrite or delete, and the index refreshes from disk afterwards | The index can be out of date (the card can change outside the app), and there's no pending state to drift from the disk. Changes made while the app is open stop a run instead of being clobbered |
 | 2026-10-07 | The web app looks like the Deluge (black panel, OLED-style readouts, lit pads, JetBrains Mono), browses the card in Finder-style columns, and puts each preview's play controls beside it rather than in a global transport | Picked from four directions on a design canvas. A preview plays only the song or sample selected, so there's nothing for a global transport to control |
 | 2026-10-07 | Clip views read the song from the firmware (`webluge_web_describe`), not from the XML | The firmware has already parsed every song format, kits' drum names and the clips' colours. The JSON goes out in code page 437, like the names, and the page decodes it as that |
 | 2026-10-07 | Render 2048 frames at a time, 150ms ahead of playback, from the main thread's timer, rather than through an AudioWorklet and ring buffer (5.1) | Short enough that a toggle is heard almost at once, and cheap: 2048 frames of even `Annoying Song` render in about a millisecond. Chrome doesn't throttle timers in tabs playing audio. Revisit with 5.1 if it underruns |
@@ -191,6 +219,17 @@ These are expected, and we accept them unless a listening test says otherwise.
 ## Discoveries
 
 Newest first. Note anything that contradicts or changes the plan, and link to the checkpoint it affects.
+
+- **2026-10-08** Planner and runner (8.1):
+  - Clips link to their instrument by `instrumentPresetName` and `instrumentPresetFolder`, and `InstrumentClip::claimOutput` fails the load (`FILE_CORRUPTED`) when no instrument matches. So renaming a preset in a song means changing the instrument and every clip together; the firmware test checks the failure.
+  - On the copy of Tamlyn's card (358 songs), 44 instruments in older songs have no `presetFolder`, and clips name presets by number 731 times. The planner leaves those links alone.
+  - A deleted sample isn't always lost: the firmware falls back to a copy among the song's collected samples, as `SONG060` has for the 808 hi-hat. The delete's warning counts only songs left without one.
+  - Moving the card copy's biggest sample folder moves 9,795 files and rewrites 181 songs, kits and synths.
+
+- **2026-10-08** Planning Phase 8:
+  - Kits and synths have collected-samples folders too, like songs: `Instrument::setupDefaultAudioFileDir` looks in `<presetFolder>/<name>/`. `alternatePath` already works for them, despite its parameter's name.
+  - Songs link each kit and synth to its preset with `presetName` and `presetFolder` (`Instrument::writeDataToFile`). Loading doesn't check that the preset exists; the link only steers the preset browser and saving.
+  - Chrome moves and renames files in place with `FileSystemFileHandle.move()` (Chrome 111), but not folders, so moving a folder means making the new one, moving its files and removing the old one.
 
 - **2026-10-07** Clip toggling (7.4):
   - As on the device, only one clip per instrument plays at a time, so starting a clip stops the other clips on its instrument. `Reference Kit 808`'s five clips share one kit, so only one plays at once.

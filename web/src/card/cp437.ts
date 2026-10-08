@@ -6,6 +6,29 @@ const upperHalf =
   "└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀" +
   "α\xdfΓπΣσ\xb5τΦΘΩδ∞φε∩≡\xb1≥≤⌠⌡\xf7≈\xb0∙\xb7√ⁿ\xb2■\xa0";
 
+const upperCodes = new Map(Array.from(upperHalf, (c, i) => [c.charCodeAt(0), 0x80 + i]));
+
+function codeOf(c: number): number | undefined {
+  return c < 0x80 ? c : upperCodes.get(c);
+}
+
+export function isCp437(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    if (codeOf(text.charCodeAt(i)) === undefined) return false;
+  }
+  return true;
+}
+
+export function encodeCp437(text: string): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) {
+    const code = codeOf(text.charCodeAt(i));
+    if (code === undefined) throw new Error(`${JSON.stringify(text[i])} isn't in code page 437`);
+    bytes[i] = code;
+  }
+  return bytes;
+}
+
 export function decodeCp437(bytes: Uint8Array): string {
   let text = "";
   // Chunked, because String.fromCharCode takes its codes as arguments.

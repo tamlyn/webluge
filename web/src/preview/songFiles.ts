@@ -2,7 +2,7 @@
 // card's root. Copying only these keeps the card image small; a whole card can be many gigabytes.
 
 import { Card } from "../card/card";
-import { readDocument } from "../card/sampleIndex";
+import { readDocument } from "../card/usageIndex";
 import { alternatePath, findSampleReferences } from "../card/references";
 import type { CardFile } from "./firmware";
 

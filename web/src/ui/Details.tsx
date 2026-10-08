@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { type Card, baseName, parentPath } from "../card/card";
 import { pathKey } from "../card/references";
-import { isDocument, type SampleIndex } from "../card/sampleIndex";
+import { isDocument, type UsageIndex } from "../card/usageIndex";
 import { collectSongFiles, findSample } from "../preview/songFiles";
 import { SongPlayer } from "../preview/songPlayer";
 import { ClipSkeleton, ClipView } from "./ClipView";
@@ -14,7 +14,7 @@ import { useAsync } from "./useAsync";
 type Props = {
   card: Card;
   path: string;
-  index?: SampleIndex;
+  index?: UsageIndex;
   audioContext: () => AudioContext;
   onGoTo: (path: string) => void;
 };
@@ -112,8 +112,8 @@ function documentKind(path: string): string {
 }
 
 // A document's samples, and where on the card each one is, or null if it's missing.
-function useSamples(card: Card, path: string, index?: SampleIndex) {
-  const samples = index?.samplesOf.get(path);
+function useSamples(card: Card, path: string, index?: UsageIndex) {
+  const samples = index?.documents.get(pathKey(path))?.samples;
   const found = useAsync(
     () => Promise.all((samples ?? []).map((sample) => findSample(card, path, sample))),
     [card, path, samples],

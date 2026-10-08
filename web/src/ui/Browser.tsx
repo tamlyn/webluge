@@ -1,7 +1,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { type Card, type Entry, joinPath, parentPath } from "../card/card";
 import { pathKey } from "../card/references";
-import type { SampleIndex } from "../card/sampleIndex";
+import type { UsageIndex } from "../card/usageIndex";
 import { isAudio, samePath } from "./files";
 import type { Navigate } from "./route";
 import { useAsync } from "./useAsync";
@@ -12,7 +12,7 @@ export type Selection = { path: string; folder: boolean };
 type Props = {
   card: Card;
   selection: Selection;
-  index?: SampleIndex;
+  index?: UsageIndex;
   onSelect: Navigate;
 };
 

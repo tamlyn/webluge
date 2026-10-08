@@ -1,4 +1,4 @@
-import { isDocument } from "../card/sampleIndex";
+import { isDocument } from "../card/usageIndex";
 
 export function isAudio(path: string): boolean {
   return /\.(wav|aiff?)$/i.test(path);

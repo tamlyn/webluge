@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Card } from "./card/card";
 import { rememberedCard } from "./card/connect";
-import { buildSampleIndex, type SampleIndex } from "./card/sampleIndex";
+import { refreshIndex, type UsageIndex } from "./card/usageIndex";
 import { sampleRate } from "./preview/firmware";
 import { Browser, type Selection } from "./ui/Browser";
 import { ConnectCard } from "./ui/ConnectCard";
@@ -13,7 +13,7 @@ const root: Selection = { path: "", folder: true };
 export function App() {
   const [remembered, setRemembered] = useState<FileSystemDirectoryHandle>();
   const [card, setCard] = useState<Card>();
-  const [index, setIndex] = useState<SampleIndex>();
+  const [index, setIndex] = useState<UsageIndex>();
   const [indexProgress, setIndexProgress] = useState<string>();
   const [selection, navigate] = useSelection();
   const audioContext = useRef<AudioContext>(undefined);
@@ -26,7 +26,7 @@ export function App() {
     if (!card) return;
     let current = true;
     setIndex(undefined);
-    buildSampleIndex(card, (done, total) => current && setIndexProgress(`Indexing ${done} of ${total}`)).then(
+    refreshIndex(card, undefined, (done, total) => current && setIndexProgress(`Indexing ${done} of ${total}`)).then(
       (built) => {
         if (!current) return;
         setIndex(built);
