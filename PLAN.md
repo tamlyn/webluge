@@ -97,14 +97,14 @@ Samples stream from the SD card by mapping FAT clusters straight to sector reads
   *Verify:* `ctest` (`note`) renders a C4: it isn't silent, its strongest partial is the fundamental, and the spectral peak is within ±1 cent of 261.626 Hz.
 - [x] **4.3 Full song render.** `webluge render <card> <song> out.wav <seconds>` presses play and records what the codec plays. `webluge export <card> <song> <folder>` runs the firmware's own stem export, a stem per clip, and copies the WAVs out of the card.
   *Verify:* each reference song exports without crashing, one stem per device stem, none silent. Lengths differ from the device's by up to 1500 frames, not "within one block": stem export renders offline for as long as the CPU takes, so its overshoot past the clip's end depends on CPU speed (see Discoveries). `test-songs/` render whole: `C.Blade Runner` and `Annoying Song` in arranger mode.
-- [ ] **4.4 Match against the device.**
+- [x] **4.4 Match against the device.**
   *Verify:* `mise exec -- uv run --with numpy scripts/null_test.py reference/1.2.1/<song>/device <export folder>/<song>/CLIPS` aligns each render with its device stem export (cross-correlation), then null-tests:
   - integer-only song: residual RMS at least 60 dB below the signal (target: bit-identical apart from block-size effects);
   - float-heavy songs: residual at least 40 dB below, plus a blind A/B listening check by Tamlyn.
   
   Record the numbers in Discoveries. If a song falls short, add a checkpoint to find the cause before moving on.
 
-  The device-made references fell short because of the ladder filter's noise (4.6). The generated references (0.3) pass both thresholds (see Discoveries). Left: the listening check passed, but it wasn't blind.
+  The device-made references fell short because of the ladder filter's noise (4.6). The generated references (0.3) pass both thresholds (see Discoveries). The listening check passed; it was labelled rather than blind, which Tamlyn accepted, since the only differences heard were where randomness predicts them.
 - [x] **4.5 Null-testable references.** Re-record the references on 1.2.1 with nothing random: every oscillator's retrigger phase set (e.g. 0°), and no noise, random LFOs or unison spread. The device-made references can't null, as their ladder filters add noise (4.6); the generated ones (0.3) avoid it in every clip meant to null.
   *Verify:* the README lists the random sources of each clip meant to null as none, and every song as recorded on 1.2.1; 4.4 reruns on them.
 - [x] **4.6 Residual that depends on render timing.** Find why the synths' plain clips null to only −38 to −58 dB although 67–95% of their samples are bit-identical, and why `Reference Kit 808`'s clips with several drums reach only −38 dB when the kick alone reaches −75 dB. In both, the error comes in short runs (in the synths, the 30 samples after each edge of a square wave), and the nulls move when only the export's timing changes, so look for state that runs freely with time, such as LFOs or the kit's flanger.
