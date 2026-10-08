@@ -30,10 +30,51 @@ export function Details(props: Props) {
       ) : isDocument(path) ? (
         <DocumentDetails {...props} />
       ) : (
-        <Oled title={baseName(path)} />
+        <TextDetails {...props} />
       )}
     </section>
   );
+}
+
+// Enough for any settings file or notes, without reading the whole of a firmware image.
+const textLimit = 256 * 1024;
+
+type TextFile =
+  | { state: "missing" }
+  | { state: "binary"; size: number }
+  | { state: "text"; size: number; text: string; truncated: boolean };
+
+async function readText(card: Card, path: string): Promise<TextFile> {
+  const file = await card.file(path);
+  if (!file) return { state: "missing" };
+  const bytes = new Uint8Array(await file.slice(0, textLimit).arrayBuffer());
+  if (bytes.includes(0)) return { state: "binary", size: file.size };
+  // Streaming, so a character cut off at the limit isn't decoded as garbage.
+  const text = new TextDecoder().decode(bytes, { stream: file.size > textLimit });
+  return { state: "text", size: file.size, text, truncated: file.size > textLimit };
+}
+
+function TextDetails({ card, path }: Props) {
+  const file = useAsync(() => readText(card, path), [card, path]);
+  const size = file && file.state !== "missing" ? formatSize(file.size) : undefined;
+  return (
+    <>
+      <Oled title={baseName(path)} subtitle={size} />
+      {file?.state === "missing" && <p className="notice error">Not on the card</p>}
+      {file?.state === "binary" && <p className="notice muted">Not a text file</p>}
+      {file?.state === "text" && (
+        <>
+          <pre className="text-file">{file.text}</pre>
+          {file.truncated && <p className="notice muted">Showing the first {formatSize(textLimit)}</p>}
+        </>
+      )}
+    </>
+  );
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return plural(bytes, "byte");
+  return bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function withoutExtension(path: string): string {

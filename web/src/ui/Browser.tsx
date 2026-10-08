@@ -3,6 +3,7 @@ import { type Card, type Entry, joinPath, parentPath } from "../card/card";
 import { pathKey } from "../card/references";
 import type { SampleIndex } from "../card/sampleIndex";
 import { isAudio, samePath } from "./files";
+import type { Navigate } from "./route";
 import { useAsync } from "./useAsync";
 
 // A file or folder on the card. The card's root is the folder "".
@@ -12,7 +13,7 @@ type Props = {
   card: Card;
   selection: Selection;
   index?: SampleIndex;
-  onSelect: (selection: Selection) => void;
+  onSelect: Navigate;
 };
 
 // Finder-style columns, one for each folder from the card's root down to the selection.
@@ -61,10 +62,9 @@ function foldersShowing({ path, folder }: Selection): string[] {
   return folder && path ? [...ancestors, path] : ancestors.length ? ancestors : [""];
 }
 
-type ColumnProps = Omit<Props, "onSelect"> & {
+type ColumnProps = Props & {
   folder: string;
   unusedOnly: boolean;
-  onSelect: (selection: Selection) => void;
 };
 
 function Column({ card, folder, selection, index, unusedOnly, onSelect }: ColumnProps) {
@@ -89,7 +89,8 @@ function Column({ card, folder, selection, index, unusedOnly, onSelect }: Column
     }
   }, [holdsSelection, selection.path]);
 
-  const select = (entry: Entry) => onSelect({ path: entry.path, folder: entry.kind === "folder" });
+  const select = (entry: Entry, replace = false) =>
+    onSelect({ path: entry.path, folder: entry.kind === "folder" }, { replace });
 
   async function onKeyDown(event: KeyboardEvent) {
     if (!entries?.length) return;
@@ -97,7 +98,8 @@ function Column({ card, folder, selection, index, unusedOnly, onSelect }: Column
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
-      select(entries[i < 0 ? 0 : Math.min(Math.max(i + step, 0), entries.length - 1)]);
+      // Stepping through a folder would otherwise leave an entry in the history for every file passed.
+      select(entries[i < 0 ? 0 : Math.min(Math.max(i + step, 0), entries.length - 1)], true);
     } else if ((event.key === "ArrowRight" || event.key === "Enter") && current?.kind === "folder") {
       event.preventDefault();
       const first = (await card.list(current.path))[0];

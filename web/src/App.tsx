@@ -6,6 +6,7 @@ import { sampleRate } from "./preview/firmware";
 import { Browser, type Selection } from "./ui/Browser";
 import { ConnectCard } from "./ui/ConnectCard";
 import { Details } from "./ui/Details";
+import { useSelection } from "./ui/route";
 
 const root: Selection = { path: "", folder: true };
 
@@ -14,7 +15,7 @@ export function App() {
   const [card, setCard] = useState<Card>();
   const [index, setIndex] = useState<SampleIndex>();
   const [indexProgress, setIndexProgress] = useState<string>();
-  const [selection, setSelection] = useState(root);
+  const [selection, navigate] = useSelection();
   const audioContext = useRef<AudioContext>(undefined);
 
   useEffect(() => {
@@ -42,10 +43,7 @@ export function App() {
     return (
       <ConnectCard
         remembered={remembered}
-        onConnect={(handle) => {
-          setCard(new Card(handle));
-          setSelection(root);
-        }}
+        onConnect={(handle) => setCard(new Card(handle))}
       />
     );
   }
@@ -56,13 +54,13 @@ export function App() {
       <header className="top">
         <h1>Webluge</h1>
         <nav className="path" aria-label="Path">
-          <button onClick={() => setSelection(root)}>{card.name}</button>
+          <button onClick={() => navigate(root)}>{card.name}</button>
           {parts.map((part, i) => (
             <span key={i}>
               {"/ "}
               <button
                 onClick={() =>
-                  setSelection({ path: parts.slice(0, i + 1).join("/"), folder: i < parts.length - 1 || selection.folder })
+                  navigate({ path: parts.slice(0, i + 1).join("/"), folder: i < parts.length - 1 || selection.folder })
                 }
               >
                 {part}
@@ -72,13 +70,19 @@ export function App() {
         </nav>
         <div className="card-name">
           {indexProgress && <span>{indexProgress}</span>}
-          <button className="key" onClick={() => setCard(undefined)}>
+          <button
+            className="key"
+            onClick={() => {
+              setCard(undefined);
+              navigate(root);
+            }}
+          >
             Eject
           </button>
         </div>
       </header>
       <div className="body">
-        <Browser card={card} selection={selection} index={index} onSelect={setSelection} />
+        <Browser card={card} selection={selection} index={index} onSelect={navigate} />
         {selection.folder ? (
           <section className="details empty">Pick a song or sample. The arrow keys move through the columns.</section>
         ) : (
@@ -88,7 +92,7 @@ export function App() {
             path={selection.path}
             index={index}
             audioContext={() => (audioContext.current ??= new AudioContext({ sampleRate }))}
-            onGoTo={(path) => setSelection({ path, folder: false })}
+            onGoTo={(path) => navigate({ path, folder: false })}
           />
         )}
       </div>

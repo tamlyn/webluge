@@ -539,6 +539,20 @@ button:disabled {
   color: var(--soft);
 }
 
+.text-file {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Links to songs, kits, synths and samples, one per line. */
 .links {
   list-style: none;
