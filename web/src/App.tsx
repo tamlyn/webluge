@@ -7,6 +7,7 @@ import { sampleRate } from "./preview/firmware";
 import { Browser, type Selection } from "./ui/Browser";
 import { ConnectCard } from "./ui/ConnectCard";
 import { Details } from "./ui/Details";
+import { ErrorBoundary } from "./ui/ErrorBoundary";
 import { MissingSamples } from "./ui/MissingSamples";
 import { type Drop, useDropTarget } from "./ui/drag";
 import { samePath } from "./ui/files";
@@ -27,10 +28,10 @@ export function App() {
   if (!card) {
     return <ConnectCard remembered={remembered} onConnect={(handle) => setCard(new Card(handle))} />;
   }
-  return <CardView card={card} onEject={() => setCard(undefined)} />;
+  return <CardView card={card} onClose={() => setCard(undefined)} />;
 }
 
-function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
+function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
   const [index, setIndex] = useState<UsageIndex>();
   const [indexProgress, setIndexProgress] = useState<string>();
   const [route, navigate] = useRoute();
@@ -130,7 +131,11 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
         <div className="card-name">
           {indexProgress && <span>{indexProgress}</span>}
           {status && (
-            <span className={`status ${status.state === "failed" ? "error" : ""}`} role="status" title={status.message}>
+            <span
+              className={`status ${status.state === "failed" ? "error" : ""} ${status.fades ? "fades" : ""}`}
+              role="status"
+              title={status.message}
+            >
               {status.message}
             </span>
           )}
@@ -143,11 +148,11 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
             className="key"
             disabled={operations.busy}
             onClick={() => {
-              onEject();
+              onClose();
               navigate(root);
             }}
           >
-            Eject
+            Close card
           </button>
         </div>
       </header>
@@ -167,33 +172,39 @@ function CardView({ card, onEject }: { card: Card; onEject: () => void }) {
           }}
           onDrop={organise.onDrop}
         />
-        {"view" in route ? (
-          <MissingSamples
-            card={card}
-            index={index}
-            busy={operations.busy}
-            onRelink={(message, relinks) => operations.perform(message, (context) => planRelinks(context, relinks))}
-            onGoTo={(path) => navigate({ path, folder: false })}
-          />
-        ) : operations.running ? (
-          // Songs only ever load from a settled card.
-          <section className="details empty">Changing the card…</section>
-        ) : chosen.length > 1 ? (
-          <section className="details empty">
-            {chosen.length} chosen. Drag them onto a folder, or use Move to…
-          </section>
-        ) : selection.folder ? (
-          <section className="details empty">Pick a song or sample. The arrow keys move through the columns.</section>
-        ) : (
-          <Details
-            key={selection.path}
-            card={card}
-            path={selection.path}
-            index={index}
-            audioContext={() => (audioContext.current ??= new AudioContext({ sampleRate }))}
-            onGoTo={(path) => navigate({ path, folder: false })}
-          />
-        )}
+        <ErrorBoundary
+          key={"view" in route ? route.view : selection.path}
+          fallback={(error) => (
+            <section className="details empty error">Couldn't show this: {String(error)}</section>
+          )}
+        >
+          {"view" in route ? (
+            <MissingSamples
+              card={card}
+              index={index}
+              busy={operations.busy}
+              onRelink={(message, relinks) => operations.perform(message, (context) => planRelinks(context, relinks))}
+              onGoTo={(path) => navigate({ path, folder: false })}
+            />
+          ) : operations.running ? (
+            // Songs only ever load from a settled card.
+            <section className="details empty">Changing the card…</section>
+          ) : chosen.length > 1 ? (
+            <section className="details empty">
+              {chosen.length} chosen. Drag them onto a folder, or use Move to…
+            </section>
+          ) : selection.folder ? (
+            <section className="details empty">Pick a song or sample. The arrow keys move through the columns.</section>
+          ) : (
+            <Details
+              card={card}
+              path={selection.path}
+              index={index}
+              audioContext={() => (audioContext.current ??= new AudioContext({ sampleRate }))}
+              onGoTo={(path) => navigate({ path, folder: false })}
+            />
+          )}
+        </ErrorBoundary>
       </div>
       {organise.dialog}
     </div>

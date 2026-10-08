@@ -9,7 +9,8 @@ import { documentsSummary } from "./words";
 // planned from it, confirmed if need be, run, and the index catches up again. What it did is kept, newest last, so it
 // can be undone.
 
-export type Status = { state: "planning" | "running" | "done" | "failed"; message: string };
+// One that fades goes once it's been seen, as there's nothing left to do about it.
+export type Status = { state: "planning" | "running" | "done" | "failed"; message: string; fades?: boolean };
 
 type Done = { message: string; undo: Plan };
 
@@ -110,10 +111,10 @@ export function useOperations(card: Card, refresh: () => Promise<UsageIndex>, on
         const last = history.at(-1);
         if (!last) return;
         setHistory((history) => history.slice(0, -1));
+        const undone = await go(`Undone: ${last.message}`, async () => last.undo);
         // Still there to undo if nothing changed.
-        if (!(await go(`Undone: ${last.message}`, async () => last.undo))) {
-          setHistory((history) => [...history, last]);
-        }
+        if (!undone) setHistory((history) => [...history, last]);
+        else if (undone !== "partly") setStatus((status) => status && { ...status, fades: true });
       });
     },
   };
