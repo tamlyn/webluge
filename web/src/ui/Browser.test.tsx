@@ -24,11 +24,13 @@ const files = {
   "SAMPLES/Drums/Kick.wav": "",
   "SAMPLES/Drums/Snare.wav": "",
   "SONGS/Song.XML": "<song/>",
+  "SONGS/song/Bass.wav": "",
+  "SONGS/Unsung/Lead.wav": "",
 };
 
 // Holds the selection and what's chosen with it as the app does.
-function Harness({ card, tools }: { card: Card; tools: Tools }) {
-  const [selection, setSelection] = useState<Selection>({ path: "SAMPLES/Drums", folder: true });
+function Harness({ card, tools, start }: { card: Card; tools: Tools; start: Selection }) {
+  const [selection, setSelection] = useState<Selection>(start);
   const [choice, setChoice] = useState<{ paths: string[]; anchor: string }>();
   const chosen =
     choice && choice.paths.some((path) => samePath(path, selection.path))
@@ -55,9 +57,15 @@ function Harness({ card, tools }: { card: Card; tools: Tools }) {
   );
 }
 
-async function setup(tools: Tools = {}) {
-  render(<Harness card={new Card(memoryFolder(files) as unknown as FileSystemDirectoryHandle)} tools={tools} />);
-  await screen.findByText("Kick.wav");
+// Waits for an entry in the last column to be listed.
+async function setup(
+  tools: Tools = {},
+  start: Selection = { path: "SAMPLES/Drums", folder: true },
+  ready = "Kick.wav",
+) {
+  const card = new Card(memoryFolder(files) as unknown as FileSystemDirectoryHandle);
+  render(<Harness card={card} tools={tools} start={start} />);
+  await screen.findByText(ready);
 }
 
 const row = (name: string) => screen.getByText(name, { selector: ".name" }).closest("li")!;
@@ -193,5 +201,14 @@ describe("Browser", () => {
     click("Kick.wav");
     press("Drums", "Backspace", { metaKey: true });
     expect(selected()).toBe("Kick.wav");
+  });
+
+  it("lists a song's collected samples just after it", async () => {
+    await setup({}, { path: "SONGS", folder: true }, "Song.XML");
+    const names = [...column("SONGS").querySelectorAll(".name")].map((name) => name.textContent);
+    // Without a song of the same name, a folder is just a folder.
+    expect(names).toEqual(["Unsung", "Song.XML", "song"]);
+    expect(row("song").className).toContain("companion");
+    expect(row("Unsung").className).not.toContain("companion");
   });
 });

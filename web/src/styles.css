@@ -345,6 +345,11 @@ button:disabled {
   cursor: pointer;
 }
 
+/* A song, kit or synth's collected samples, under it. */
+.entries li.companion {
+  padding-left: 32px;
+}
+
 .entries li:hover {
   background: var(--hover);
 }

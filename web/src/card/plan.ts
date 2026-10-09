@@ -74,7 +74,7 @@ export function nameProblem(name: string): string | undefined {
 }
 
 // A song, kit or synth's collected samples, in a folder named after it beside it.
-function companionOf(path: string): string | undefined {
+export function companionOf(path: string): string | undefined {
   const home = homeOf(path);
   return /\.xml$/i.test(path) && home && home !== "SAMPLES" ? path.replace(/\.xml$/i, "") : undefined;
 }

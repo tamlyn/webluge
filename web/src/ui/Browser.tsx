@@ -1,6 +1,6 @@
-import { type KeyboardEvent, type MouseEvent, useEffect, useRef } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef } from "react";
 import { baseName, type Card, type Entry, joinPath, parentPath } from "../card/card";
-import { homeOf } from "../card/plan";
+import { companionOf, homeOf } from "../card/plan";
 import { pathKey } from "../card/references";
 import type { UsageIndex } from "../card/usageIndex";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -107,13 +107,13 @@ function Column({ card, folder, selection, chosen, anchor, index, version, onDel
   const { onSelect, onChoose, onDrop } = props;
   const listed = useAsync(() => card.list(folder), [card, folder, version]);
   // The last listing stays while it lists again after a change: emptied, the column would lose its scroll position.
-  const lastListed = useRef(listed);
-  if (listed) lastListed.current = listed;
-  const entries = listed ?? lastListed.current;
+  const lastListed = useRef<Entry[]>(undefined);
+  const entries = useMemo(() => (listed ? besideTheirOwners(listed) : lastListed.current), [listed]);
+  if (listed) lastListed.current = entries;
+  const onPath = childOnPath(folder, selection.path);
   const list = useRef<HTMLUListElement>(null);
   const usersOf = (entry: Entry) =>
     index && isAudio(entry.path) ? (index.usersOf.get(pathKey(entry.path))?.length ?? 0) : undefined;
-  const onPath = childOnPath(folder, selection.path);
   const current = entries?.find((entry) => samePath(entry.path, onPath));
   const holdsSelection = samePath(parentPath(selection.path), folder) && selection.path !== "";
   const chosenHere = new Set(holdsSelection ? chosen.map(pathKey) : []);
@@ -188,11 +188,12 @@ function Column({ card, folder, selection, chosen, anchor, index, version, onDel
     <div className={`column ${hasAudio ? "has-audio" : ""} ${drop.over ? "drop-target" : ""}`} {...drop.handlers}>
       <h2 className="label">{folderName(card, folder)}</h2>
       <ul className="entries" tabIndex={0} ref={list} onKeyDown={onKeyDown}>
-        {entries?.map((entry) => (
+        {entries?.map((entry, i) => (
           <EntryRow
             key={entry.path}
             entry={entry}
             atRoot={!folder}
+            companion={entry.kind === "folder" && samePath(companionOf(entries[i - 1]?.path ?? ""), entry.path)}
             state={
               entry === current
                 ? samePath(entry.path, selection.path)
@@ -217,6 +218,7 @@ function Column({ card, folder, selection, chosen, anchor, index, version, onDel
 function EntryRow({
   entry,
   atRoot,
+  companion,
   state,
   users,
   dragging,
@@ -225,6 +227,8 @@ function EntryRow({
 }: {
   entry: Entry;
   atRoot: boolean;
+  // Listed under its song, kit or synth.
+  companion: boolean;
   state: string;
   users?: number;
   // What dragging it drags: everything chosen, if it's among them.
@@ -236,7 +240,7 @@ function EntryRow({
   const movable = homeOf(entry.path) !== undefined;
   return (
     <li
-      className={`${entry.kind} ${state} ${drop.over ? "drop-target" : ""}`}
+      className={`${entry.kind} ${companion ? "companion" : ""} ${state} ${drop.over ? "drop-target" : ""}`}
       draggable={movable}
       onDragStart={(event) => startDrag(event, dragging)}
       onDragEnd={endDrag}
@@ -253,6 +257,22 @@ function EntryRow({
       )}
     </li>
   );
+}
+
+// A song, kit or synth's collected samples go wherever it goes, so their folder is listed just after it rather than
+// among the other folders.
+function besideTheirOwners(entries: Entry[]): Entry[] {
+  const folders = new Map(
+    entries.filter((entry) => entry.kind === "folder").map((entry) => [pathKey(entry.path), entry]),
+  );
+  const companion = (entry: Entry) =>
+    entry.kind === "file" ? folders.get(pathKey(companionOf(entry.path) ?? "")) : undefined;
+  const placed = new Set(entries.map(companion));
+  return entries.flatMap((entry) => {
+    if (placed.has(entry)) return [];
+    const folder = companion(entry);
+    return folder ? [entry, folder] : [entry];
+  });
 }
 
 // The folder or file inside this folder that leads to the selection.
