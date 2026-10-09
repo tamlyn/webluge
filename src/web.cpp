@@ -115,6 +115,8 @@ void appendRows(HostString& json, InstrumentClip* clip) {
 		appendString(json, drumName(row->drum));
 		json += ",\"muted\":";
 		json += row->muted ? "true" : "false";
+		json += ",\"length\":";
+		appendNumber(json, row->loopLengthIfIndependent ? row->loopLengthIfIndependent : clip->loopLength);
 		json += ",\"colour\":";
 		appendColour(json, clip->getMainColourFromY(row->y, row->getColourOffset(clip)));
 		json += ",\"notes\":[";
@@ -179,6 +181,25 @@ void appendTracks(HostString& json) {
 	json += "]";
 }
 
+// Where the clip is in its longest row, which may loop independently over longer than the clip. Ignores the row
+// playing reversed.
+int32_t livePos(Clip* clip) {
+	int32_t length = clip->getMaxLength();
+	if (clip->type == ClipType::INSTRUMENT && length > clip->loopLength) {
+		auto* instrumentClip = static_cast<InstrumentClip*>(clip);
+		for (int32_t r = 0; r < instrumentClip->noteRows.getNumElements(); r++) {
+			NoteRow* row = instrumentClip->noteRows.getElement(r);
+			if (row->loopLengthIfIndependent == length) {
+				// Rows only catch up with the clip at their next event.
+				int32_t pos = row->lastProcessedPosIfIndependent + instrumentClip->noteRowsNumTicksBehindClip
+				              + playbackHandler.getNumSwungTicksInSinceLastActionedSwungTick();
+				return pos % length;
+			}
+		}
+	}
+	return clip->getLivePos();
+}
+
 void describeSong() {
 	description = "{\"arrangement\":";
 	description += currentPlaybackMode == &arrangement ? "true" : "false";
@@ -196,8 +217,8 @@ void describeSong() {
 		appendString(description, typeName(clip->output->type));
 		description += ",\"section\":";
 		appendNumber(description, clip->section);
-		description += ",\"loopLength\":";
-		appendNumber(description, clip->loopLength);
+		description += ",\"length\":";
+		appendNumber(description, clip->getMaxLength());
 		description += ",\"colour\":";
 		if (clip->type == ClipType::AUDIO) {
 			appendColour(description, static_cast<AudioClip*>(clip)->getColour());
@@ -385,7 +406,7 @@ EMSCRIPTEN_KEEPALIVE int32_t* webluge_web_states() {
 	}
 	for (int32_t c = 0; c < currentSong->sessionClips.getNumElements(); c++) {
 		Clip* clip = currentSong->sessionClips.getClipAtIndex(c);
-		states.push_back(clip->getLivePos());
+		states.push_back(livePos(clip));
 		states.push_back((currentSong->isClipActive(clip) ? kClipActive : 0)
 		                 | (clip->armState != ArmState::OFF ? kClipArmed : 0)
 		                 | (clip->soloingInSessionMode ? kClipSoloing : 0));

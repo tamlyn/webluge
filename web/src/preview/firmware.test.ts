@@ -70,7 +70,7 @@ describe("Firmware", () => {
     expect(song.clips.length).toBeGreaterThan(1);
     for (const clip of song.clips) {
       expect(clip.type).toBe("kit");
-      expect(clip.loopLength).toBeGreaterThan(0);
+      expect(clip.length).toBeGreaterThan(0);
       expect(clip.rows!.some((row) => row.notes.length)).toBe(true);
     }
     expect(song.clips[0].rows!.map((row) => row.name)).toEqual(["KICK", "SNARE", "HATC", "HATO"]);
@@ -154,7 +154,7 @@ describe("Firmware", () => {
     firmware.toggleClip(index, false);
     const armed = firmware.render(1024);
     expect(armed.state.clips[index]).toMatchObject({ active: true, armed: true });
-    const loopFrames = firmware.song.clips[index].loopLength * armed.framesPerTick;
+    const loopFrames = firmware.song.clips[index].length * armed.framesPerTick;
     firmware.render(loopFrames);
     expect(firmware.render(1024).state.clips[index]).toMatchObject({ active: false, armed: false });
   });

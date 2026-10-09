@@ -20,10 +20,18 @@ export type ClipDescription = {
   output: string;
   type: "synth" | "kit" | "midi" | "cv" | "audio" | "none";
   section: number;
-  loopLength: number;
+  // Its longest row's, which may loop independently over longer than the clip.
+  length: number;
   colour: string;
   // Instrument clips. A row's y is its note number, or for a kit, its drum's index.
-  rows?: { y: number; name: string; muted: boolean; colour: string; notes: [pos: number, length: number, velocity: number][] }[];
+  rows?: {
+    y: number;
+    name: string;
+    muted: boolean;
+    length: number;
+    colour: string;
+    notes: [pos: number, length: number, velocity: number][];
+  }[];
   // Audio clips. Start and end are in frames of the sample.
   sample?: { path: string; start: number; end: number; rate: number };
 };

@@ -104,7 +104,7 @@ export class Player {
       arrangementPos: state.arrangement ? state.arrangementPos + ticks : state.arrangementPos,
       clips: state.clips.map((clip, i) => ({
         ...clip,
-        pos: clip.active ? (clip.pos + ticks) % this.song.clips[i].loopLength : clip.pos,
+        pos: clip.active ? (clip.pos + ticks) % this.song.clips[i].length : clip.pos,
       })),
     };
   }

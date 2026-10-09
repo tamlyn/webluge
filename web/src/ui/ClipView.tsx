@@ -14,7 +14,7 @@ export function ClipView({ card, player, playing, audioContext }: Props) {
   const { arrangement, clips: states } = usePlaybackState(player, (now) =>
     now.clips.forEach((state, i) => {
       const head = playHeads.current[i];
-      if (head) head.style.left = `${(100 * state.pos) / song.clips[i].loopLength}%`;
+      if (head) head.style.left = `${(100 * state.pos) / song.clips[i].length}%`;
     }),
   );
 
@@ -120,9 +120,9 @@ function useLaneCanvas(draw: (context: CanvasRenderingContext2D) => void, deps: 
 function Notes({ clip, ticksPerQuarterNote }: { clip: ClipDescription; ticksPerQuarterNote: number }) {
   return useLaneCanvas(
     (context) => {
-      const x = (ticks: number) => (ticks / clip.loopLength) * laneWidth;
+      const x = (ticks: number) => (ticks / clip.length) * laneWidth;
       const style = getComputedStyle(context.canvas);
-      for (let beat = 0; beat * ticksPerQuarterNote < clip.loopLength; beat++) {
+      for (let beat = 0; beat * ticksPerQuarterNote < clip.length; beat++) {
         context.fillStyle = style.getPropertyValue(beat % 4 ? "--grid" : "--grid-bar");
         context.fillRect(Math.round(x(beat * ticksPerQuarterNote)), 0, 1, laneHeight);
       }
@@ -141,9 +141,12 @@ function Notes({ clip, ticksPerQuarterNote }: { clip: ClipDescription; ticksPerQ
       for (const row of rows) {
         const top = laneHeight - (yOf(row) - lowest + 1) * rowHeight;
         context.fillStyle = row.colour;
-        for (const [pos, length, velocity] of row.notes) {
-          context.globalAlpha = (row.muted ? 0.25 : 1) * (0.35 + (0.65 * velocity) / 127);
-          context.fillRect(x(pos), top, Math.max(2, x(length) - 1), Math.max(1, rowHeight - 1));
+        // Rows shorter than the longest repeat across it.
+        for (let start = 0; start < clip.length; start += row.length) {
+          for (const [pos, length, velocity] of row.notes) {
+            context.globalAlpha = (row.muted ? 0.25 : 1) * (0.35 + (0.65 * velocity) / 127);
+            context.fillRect(x(start + pos), top, Math.max(2, x(length) - 1), Math.max(1, rowHeight - 1));
+          }
         }
       }
       context.globalAlpha = 1;
