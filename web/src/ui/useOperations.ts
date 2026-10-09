@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Card } from "../card/card";
 import { type Context, inverse, type Plan, remaining } from "../card/plan";
 import { run, RunStopped } from "../card/run";
@@ -18,7 +18,7 @@ export type Confirm = (plan: Plan) => Promise<boolean>;
 
 export type Operations = {
   status?: Status;
-  // Planning or running: nothing else can start.
+  // From the first check until the index has caught up after the run: nothing else can start.
   busy: boolean;
   // Changing the card: nothing should read it.
   running: boolean;
@@ -37,17 +37,27 @@ export function useOperations(
 ): Operations {
   const [status, setStatus] = useState<Status>();
   const [history, setHistory] = useState<Done[]>([]);
-  const busy = status?.state === "planning" || status?.state === "running";
-  // Set at once, unlike the status, so a double click can't start two.
+  const [busy, setBusy] = useState(false);
+  // Set at once, unlike the state, so a double click can't start two.
   const started = useRef(false);
+
+  // Leaving partway would leave songs pointing at samples that haven't moved yet, with nothing to undo it.
+  useEffect(() => {
+    if (!busy) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    addEventListener("beforeunload", warn);
+    return () => removeEventListener("beforeunload", warn);
+  }, [busy]);
 
   async function exclusively<T>(action: () => Promise<T>): Promise<T | undefined> {
     if (started.current) return;
     started.current = true;
+    setBusy(true);
     try {
       return await action();
     } finally {
       started.current = false;
+      setBusy(false);
     }
   }
 
