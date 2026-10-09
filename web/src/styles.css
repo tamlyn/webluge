@@ -277,16 +277,6 @@ button:disabled {
   border-bottom: 1px solid var(--line);
 }
 
-.browser-tools label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .tools {
   margin-left: auto;
   display: flex;
@@ -298,13 +288,6 @@ button:disabled {
 .tools .text-button {
   font-size: 12px;
   letter-spacing: 0.06em;
-}
-
-.browser-tools input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
 }
 
 .columns {
@@ -330,9 +313,10 @@ button:disabled {
   flex-basis: 330px;
 }
 
-/* Takes up any width the tools leave over. */
+/* Takes up any width the tools leave over, but a long name mustn't widen the browser for it to fill. */
 .column:last-child {
   flex-grow: 1;
+  contain: inline-size;
   border-right: 0;
 }
 
@@ -707,10 +691,6 @@ button.link:hover {
 
 .link-detail.missing {
   color: var(--accent);
-}
-
-.show-all {
-  align-self: flex-start;
 }
 
 .link .text-button {

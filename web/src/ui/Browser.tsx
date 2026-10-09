@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useRef } from "react";
 import { baseName, type Card, type Entry, joinPath, parentPath } from "../card/card";
 import { homeOf } from "../card/plan";
 import { pathKey } from "../card/references";
@@ -34,7 +34,6 @@ type Props = {
 
 // Finder-style columns, one for each folder from the card's root down to the selection.
 export function Browser({ card, selection, index, tools, onSelect, ...props }: Props) {
-  const [unusedOnly, setUnusedOnly] = useState(false);
   const columns = useRef<HTMLDivElement>(null);
   const folders = foldersShowing(selection);
 
@@ -45,15 +44,6 @@ export function Browser({ card, selection, index, tools, onSelect, ...props }: P
   return (
     <section className="browser" aria-label="Card">
       <div className="browser-tools">
-        <label>
-          <input
-            type="checkbox"
-            checked={unusedOnly}
-            disabled={!index}
-            onChange={(event) => setUnusedOnly(event.target.checked)}
-          />
-          Unused samples
-        </label>
         <div className="tools">
           <button className="text-button" disabled={!tools.onNewFolder} onClick={tools.onNewFolder}>
             New folder
@@ -87,7 +77,6 @@ export function Browser({ card, selection, index, tools, onSelect, ...props }: P
               folder={folder}
               selection={selection}
               index={index}
-              unusedOnly={unusedOnly}
               onSelect={onSelect}
               onDelete={tools.onDelete}
               {...props}
@@ -111,17 +100,15 @@ function foldersShowing({ path, folder }: Selection): string[] {
 
 type ColumnProps = Omit<Props, "tools"> & {
   folder: string;
-  unusedOnly: boolean;
   onDelete?: () => void;
 };
 
-function Column({ card, folder, selection, chosen, anchor, index, version, unusedOnly, onDelete, ...props }: ColumnProps) {
+function Column({ card, folder, selection, chosen, anchor, index, version, onDelete, ...props }: ColumnProps) {
   const { onSelect, onChoose, onDrop } = props;
-  const listed = useAsync(() => card.list(folder), [card, folder, version]);
+  const entries = useAsync(() => card.list(folder), [card, folder, version]);
   const list = useRef<HTMLUListElement>(null);
   const usersOf = (entry: Entry) =>
     index && isAudio(entry.path) ? (index.usersOf.get(pathKey(entry.path))?.length ?? 0) : undefined;
-  const entries = listed?.filter((entry) => !unusedOnly || !usersOf(entry));
   const onPath = childOnPath(folder, selection.path);
   const current = entries?.find((entry) => samePath(entry.path, onPath));
   const holdsSelection = samePath(parentPath(selection.path), folder) && selection.path !== "";
@@ -131,7 +118,7 @@ function Column({ card, folder, selection, chosen, anchor, index, version, unuse
   // Only when what's shown changes, not on every render, which would fight the user's scrolling.
   useEffect(() => {
     list.current?.querySelector(".selected, .on-path")?.scrollIntoView({ block: "nearest" });
-  }, [onPath, listed, unusedOnly]);
+  }, [onPath, entries]);
 
   // Keys move through the columns, so focus follows the selection once the columns have it.
   useEffect(() => {
@@ -217,7 +204,7 @@ function Column({ card, folder, selection, chosen, anchor, index, version, unuse
             onDrop={onDrop}
           />
         ))}
-        {entries?.length === 0 && <li className="empty">{unusedOnly ? "No unused samples" : "Empty folder"}</li>}
+        {entries?.length === 0 && <li className="empty">Empty folder</li>}
       </ul>
     </div>
   );

@@ -182,8 +182,6 @@ function SampleList({ samples, found, onGoTo }: ReturnType<typeof useSamples> & 
 
 type Link = { name: string; detail: string; to?: string; missing?: boolean };
 
-const collapsedLinks = 12;
-
 // Songs, kits, synths or samples, one per line. Undefined links are still being indexed.
 function LinkList({
   title,
@@ -198,8 +196,6 @@ function LinkList({
   empty: string;
   onGoTo: (path: string) => void;
 }) {
-  const [all, setAll] = useState(false);
-  const showing = all ? links : links?.slice(0, collapsedLinks);
   return (
     <>
       <div className="section-head">
@@ -208,13 +204,13 @@ function LinkList({
         </h3>
         {hint && <span className="hint">{hint}</span>}
       </div>
-      {!showing ? (
+      {!links ? (
         <p className="notice muted">Indexing…</p>
-      ) : !showing.length ? (
+      ) : !links.length ? (
         <p className="notice muted">{empty}</p>
       ) : (
         <ul className="links">
-          {showing.map((link, i) => {
+          {links.map((link, i) => {
             const text = (
               <>
                 <span className="link-name">{link.name}</span>
@@ -234,11 +230,6 @@ function LinkList({
             );
           })}
         </ul>
-      )}
-      {links && links.length > collapsedLinks && (
-        <button className="text-button show-all" onClick={() => setAll(!all)}>
-          {all ? "Show fewer" : `Show all ${links.length}`}
-        </button>
       )}
     </>
   );
