@@ -95,6 +95,9 @@ export class MemoryFolderHandle {
   }
 
   private child(name: string, kind: Node["kind"], create: boolean): Node {
+    // Like Chrome, which refuses names Windows would change, such as a song's collected samples' folder when the song's
+    // name ends in a space before ".XML".
+    if (/[. ]$/.test(name)) throw new TypeError("Name is not allowed.");
     if (!attached(this.node)) throw notFound(this.name);
     const existing = this.node.entries.get(name);
     if (existing) {

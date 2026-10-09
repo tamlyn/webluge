@@ -121,6 +121,16 @@ describe("planMoves", () => {
     );
   });
 
+  it("renames a song whose name ends in a space, which the browser can't look up a folder by", async () => {
+    const { context } = await setup({
+      "SONGS/Spaced .XML": `<song><sound><osc1 fileName="SAMPLES/DRUMS/Kick.wav" /></sound></song>`,
+      "SAMPLES/DRUMS/Kick.wav": "kick",
+    });
+    const plan = await planMoves(context, [{ from: "SONGS/Spaced .XML", to: "SONGS/Spaced.XML" }]);
+    expect(plan.moves).toEqual([{ from: "SONGS/Spaced .XML", to: "SONGS/Spaced.XML" }]);
+    expect(plan.companions).toEqual([]);
+  });
+
   it("gives a collected sample its path when it leaves its song's folder", async () => {
     const { context } = await setup();
     const plan = await planMoves(context, [{ from: "SONGS/Collected/DRUMS_Gone.wav", to: "SONGS/Gone.wav" }]);

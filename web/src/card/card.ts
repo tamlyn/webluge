@@ -140,6 +140,8 @@ async function child(folder: FileSystemDirectoryHandle, name: string, kind: File
   try {
     return kind === "file" ? await folder.getFileHandle(name) : await folder.getDirectoryHandle(name);
   } catch (error) {
+    // Chrome refuses names ending in a space or a dot, which FAT can't hold either, so nothing is there.
+    if (error instanceof TypeError) return undefined;
     if (!(error instanceof DOMException) || (error.name !== "NotFoundError" && error.name !== "TypeMismatchError")) {
       throw error;
     }
