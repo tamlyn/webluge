@@ -6,7 +6,7 @@ Rather than reimplementing the synth engines, Webluge compiles the [Deluge firmw
 
 **Try it:** [tamlyn.github.io/webluge](https://tamlyn.github.io/webluge/). Open a copy of your SD card to browse it, audition samples, kits and synths, and play songs, starting and stopping clips as you would in session view. It needs the File System Access API, so Chrome or Edge only.
 
-It's a work in progress. Most sounds match the device closely but not yet exactly, and there's no editing, MIDI or recording. [PLAN.md](PLAN.md) has the details.
+It's a work in progress. Most sounds match the device closely but not yet exactly, and there's no editing, MIDI or recording. [PLAN.md](docs/PLAN.md) has the details.
 
 ## Building
 
@@ -26,7 +26,7 @@ mise run build  # firmware and web app, into build and web/dist
 
 ## Firmware
 
-`DelugeFirmware` is a submodule pointing at [a fork](https://github.com/tamlyn/DelugeFirmware), pinned to release 1.2.1 plus a few small changes. [UPSTREAM.md](UPSTREAM.md) explains how those are kept and how to move to a new release. [ARM_AUDIT.md](ARM_AUDIT.md) lists the ARM-specific code and how each piece runs on the host.
+`DelugeFirmware` is a submodule pointing at [a fork](https://github.com/tamlyn/DelugeFirmware), pinned to release 1.2.1 plus a few small changes. [UPSTREAM.md](docs/UPSTREAM.md) explains how those are kept and how to move to a new release. [ARM_AUDIT.md](docs/ARM_AUDIT.md) lists the ARM-specific code and how each piece runs on the host.
 
 ## Licence
 

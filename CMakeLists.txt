@@ -45,7 +45,7 @@ configure_file(${FIRMWARE}/src/deluge/util/firmware_version.h.in ${generated}/ut
 configure_file(${FIRMWARE}/src/deluge/version/version.h.in ${generated}/version.h @ONLY)
 configure_file(${FIRMWARE}/src/deluge/version/version.cpp.in ${generated}/version.cpp.gen @ONLY)
 
-# Everything in src/deluge except the hardware drivers and the ARM-only files listed in ARM_AUDIT.md.
+# Everything in src/deluge except the hardware drivers and the ARM-only files listed in docs/ARM_AUDIT.md.
 file(GLOB_RECURSE firmware_sources CONFIGURE_DEPENDS
 	${FIRMWARE}/src/deluge/*.c
 	${FIRMWARE}/src/deluge/*.cpp
@@ -106,7 +106,7 @@ target_compile_options(firmware PUBLIC
 	-fno-rtti
 	$<$<COMPILE_LANGUAGE:CXX>:-fno-threadsafe-statics>
 	-msimd128
-	# The device never fuses multiply-adds (VFPv3), and the DX7 kernel port depends on it. See ARM_AUDIT.md.
+	# The device never fuses multiply-adds (VFPv3), and the DX7 kernel port depends on it. See docs/ARM_AUDIT.md.
 	-ffp-contract=off
 	-Wno-everything
 )

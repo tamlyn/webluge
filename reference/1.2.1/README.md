@@ -20,7 +20,7 @@ The synths were re-recorded on 1.2.1 with every oscillator's retrigger phase at 
 Random sources left:
 
 - Synth Sub's noise (clip 5), so that clip is left out of comparisons.
-- Every synth's and drum's low-pass filter, the 24 dB transistor ladder, which adds noise to its cutoff whenever it runs (`LpLadderFilter::do24dBLPFOnSample`). It runs even fully open, because the default `y` cable is patched to the cutoff. So none of these songs can null: two host exports at different render timings null against each other as well as against the device (PLAN.md 4.6).
+- Every synth's and drum's low-pass filter, the 24 dB transistor ladder, which adds noise to its cutoff whenever it runs (`LpLadderFilter::do24dBLPFOnSample`). It runs even fully open, because the default `y` cable is patched to the cutoff. So none of these songs can null: two host exports at different render timings null against each other as well as against the device (docs/PLAN.md 4.6).
 
 ## Generated songs
 

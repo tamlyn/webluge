@@ -5,7 +5,7 @@ import { run, RunStopped } from "../card/run";
 import type { UsageIndex } from "../card/usageIndex";
 import { documentsSummary } from "./words";
 
-// Each change to the card goes the same way (PLAN.md, Phase 8): the index catches up with the card, the change is
+// Each change to the card goes the same way (docs/PLAN.md, Phase 8): the index catches up with the card, the change is
 // planned from it, confirmed if need be, run, and the index catches up again. What it did is kept, newest last, so it
 // can be undone.
 

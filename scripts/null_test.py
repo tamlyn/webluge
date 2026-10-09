@@ -1,4 +1,4 @@
-# Null-tests host renders against device recordings (PLAN.md 4.4).
+# Null-tests host renders against device recordings (docs/PLAN.md 4.4).
 #
 #   mise exec -- uv run --with numpy scripts/null_test.py <device folder> <host folder>
 #

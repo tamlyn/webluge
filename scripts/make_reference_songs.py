@@ -1,5 +1,5 @@
-# Writes the reference songs that cover synth engines, effects and sample playback (PLAN.md 0.3), each clip testing one
-# thing, so its stem nulls or fails on its own. Run it from the repo root:
+# Writes the reference songs that cover synth engines, effects and sample playback (docs/PLAN.md 0.3), each clip testing
+# one thing, so its stem nulls or fails on its own. Run it from the repo root:
 #
 #   python3 scripts/make_reference_songs.py
 #

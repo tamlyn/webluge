@@ -1,6 +1,6 @@
-// Renders the blank song through the virtual audio clock: the metronome's timing (PLAN.md 4.1), a synth note's pitch
-// (4.2) and a sample played off its own pitch. The firmware boots once per process, so each scenario runs in its own:
-// render_test <scenario>.
+// Renders the blank song through the virtual audio clock: the metronome's timing (docs/PLAN.md 4.1), a synth note's
+// pitch (4.2) and a sample played off its own pitch. The firmware boots once per process, so each scenario runs in its
+// own: render_test <scenario>.
 
 #include "boot.h"
 #include "card/image.h"

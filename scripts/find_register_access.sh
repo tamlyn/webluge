@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lists the functions in the built wasm that use a constant in the RZ/A1's peripheral address range
 # (0xE0000000-0xFEFFFFFF), grouped by the top 16 bits of the address. On the host those addresses are out of
-# bounds, so any of these that runs traps unless its peripheral is replaced (see ARM_AUDIT.md). DSP code uses
+# bounds, so any of these that runs traps unless its peripheral is replaced (see docs/ARM_AUDIT.md). DSP code uses
 # constants in this range too, so expect false positives in the 0xE000, 0xF000 and 0xF800-0xFF00 groups.
 # Register pointers held in tables rather than inlined don't show up.
 set -euo pipefail

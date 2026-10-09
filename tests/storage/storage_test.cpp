@@ -1,5 +1,5 @@
-// Checks the in-memory card (PLAN.md 3.1) and the card image builder (3.2) through FatFs, including the raw cluster
-// reads that sample streaming uses.
+// Checks the in-memory card (docs/PLAN.md 3.1) and the card image builder (3.2) through FatFs, including the raw
+// cluster reads that sample streaming uses.
 
 #include "card/image.h"
 #include "hal/disk.h"
