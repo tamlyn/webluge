@@ -27,6 +27,11 @@ export async function rememberedCard(): Promise<FileSystemDirectoryHandle | unde
   return withStore("readonly", (store) => store.get(key));
 }
 
+// Opening only asks to read, so reopening can change the card only if the browser kept an earlier grant to write.
+export async function stillWritable(handle: FileSystemDirectoryHandle): Promise<boolean> {
+  return (await handle.queryPermission({ mode: "readwrite" })) === "granted";
+}
+
 // Needs a user gesture unless the browser still has permission.
 export async function reconnect(handle: FileSystemDirectoryHandle): Promise<boolean> {
   if ((await handle.queryPermission({ mode })) === "granted") return true;
