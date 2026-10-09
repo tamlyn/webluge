@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { Card, parentPath } from "./card/card";
+import { baseName, Card, compareEntries, parentPath } from "./card/card";
 import { rememberedCard } from "./card/connect";
 import { followMove, inTrash, planRelinks } from "./card/plan";
 import { refreshIndex, type UsageIndex } from "./card/usageIndex";
@@ -80,10 +80,21 @@ export function CardView({ card, onClose }: { card: Card; onClose: () => void })
     const { path, folder } = current.current;
     const moved = followMove(done, path);
     if ("view" in routeOf(location.hash) || moved === path) return;
-    // What's deleted isn't followed into the trash: the folder it was in stays showing.
-    if (inTrash(moved) && !inTrash(path)) navigate({ path: parentPath(path), folder: true }, { replace: true });
+    if (inTrash(moved) && !inTrash(path)) void selectNeighbour(current.current);
     else navigate({ path: moved, folder }, { replace: true });
   });
+
+  // What's deleted isn't followed into the trash: what came after it in its folder is selected instead, or else what
+  // came before it, or else the folder.
+  async function selectNeighbour(deleted: Selection) {
+    const folder = parentPath(deleted.path);
+    const entry = { name: baseName(deleted.path), path: deleted.path, kind: deleted.folder ? "folder" : "file" } as const;
+    const left = await card.list(folder).catch(() => []);
+    // Unless the user has moved on while it listed.
+    if (!samePath(current.current.path, deleted.path)) return;
+    const next = left.find((other) => compareEntries(other, entry) > 0) ?? left.at(-1);
+    navigate(next ? { path: next.path, folder: next.kind === "folder" } : { path: folder, folder: true }, { replace: true });
+  }
 
   useEffect(() => {
     refresh().catch(() => {});

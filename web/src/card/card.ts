@@ -23,6 +23,11 @@ export function baseName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
+// Folders first, then by name, numbers in order.
+export function compareEntries(a: Entry, b: Entry): number {
+  return a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.kind === "folder" ? -1 : 1;
+}
+
 function isHidden(name: string): boolean {
   // Host metadata (.DS_Store, sync state), which the Deluge never sees as content.
   return name.startsWith(".");
@@ -50,9 +55,7 @@ export class Card {
         kind: handle.kind === "directory" ? "folder" : "file",
       });
     }
-    return entries.sort(
-      (a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.kind === "folder" ? -1 : 1),
-    );
+    return entries.sort(compareEntries);
   }
 
   // Every file under a folder, depth first.

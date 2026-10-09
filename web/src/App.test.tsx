@@ -73,12 +73,40 @@ describe("the selection following what moved", () => {
     await finished();
 
     expect(location.hash).toBe("#/SONGS/Old/B.XML");
-    expect(await row(browser, "A.XML")).toHaveProperty("className", expect.stringContaining("chosen"));
+    // Columns show what they listed before until they've listed again.
+    await waitFor(async () =>
+      expect(await row(browser, "A.XML")).toHaveProperty("className", expect.stringContaining("chosen")),
+    );
     expect(await row(browser, "B.XML")).toHaveProperty("className", expect.stringContaining("selected"));
     expect(await row(browser, "C.XML")).toHaveProperty("className", expect.not.stringMatching(/chosen|selected/));
   });
 
-  it("stays in the folder of what was deleted", async () => {
+  it("moves on to what came after what was deleted", async () => {
+    show({ "SONGS/Old/X.XML": "<song/>", "SONGS/A.XML": "<song/>", "SONGS/B.XML": "<song/>" }, "#/SONGS/A.XML");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await finished();
+    expect(location.hash).toBe("#/SONGS/B.XML");
+  });
+
+  it("moves back to what came before what was deleted last in its folder", async () => {
+    show({ "SONGS/Old/X.XML": "<song/>", "SONGS/A.XML": "<song/>", "SONGS/B.XML": "<song/>" }, "#/SONGS/B.XML");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await finished();
+    expect(location.hash).toBe("#/SONGS/A.XML");
+  });
+
+  it("moves past everything chosen that was deleted", async () => {
+    const browser = show(
+      { "SONGS/A.XML": "<song/>", "SONGS/B.XML": "<song/>", "SONGS/C.XML": "<song/>" },
+      "#/SONGS/B.XML",
+    );
+    fireEvent.click(await row(browser, "A.XML"), { metaKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await finished();
+    expect(location.hash).toBe("#/SONGS/C.XML");
+  });
+
+  it("stays in the folder of what was deleted when nothing's left in it", async () => {
     show({ "SONGS/Sub/A.XML": "<song/>" }, "#/SONGS/Sub/A.XML");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await finished();

@@ -105,7 +105,11 @@ type ColumnProps = Omit<Props, "tools"> & {
 
 function Column({ card, folder, selection, chosen, anchor, index, version, onDelete, ...props }: ColumnProps) {
   const { onSelect, onChoose, onDrop } = props;
-  const entries = useAsync(() => card.list(folder), [card, folder, version]);
+  const listed = useAsync(() => card.list(folder), [card, folder, version]);
+  // The last listing stays while it lists again after a change: emptied, the column would lose its scroll position.
+  const lastListed = useRef(listed);
+  if (listed) lastListed.current = listed;
+  const entries = listed ?? lastListed.current;
   const list = useRef<HTMLUListElement>(null);
   const usersOf = (entry: Entry) =>
     index && isAudio(entry.path) ? (index.usersOf.get(pathKey(entry.path))?.length ?? 0) : undefined;
