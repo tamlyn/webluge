@@ -157,7 +157,8 @@ function sideEffects(plan: Plan, verb: string): string[] {
       : `Also ${verb === "Delete" ? "deletes" : "moves"} the folder of samples collected for ${baseName(from)}`,
   );
   if (plan.rewrites.length) {
-    lines.push(`Also updates ${documentsSummary(plan.rewrites.map((rewrite) => rewrite.path))} that use what moves`);
+    const verb = plan.rewrites.length === 1 ? "uses" : "use";
+    lines.push(`Also updates ${documentsSummary(plan.rewrites.map((rewrite) => rewrite.path))} that ${verb} what moves`);
   }
   if (plan.broken.length) {
     const names = plan.broken.map((path) => baseName(path).replace(/\.xml$/i, "")).sort();

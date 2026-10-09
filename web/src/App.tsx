@@ -31,7 +31,7 @@ export function App() {
   return <CardView card={card} onClose={() => setCard(undefined)} />;
 }
 
-function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
+export function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
   const [index, setIndex] = useState<UsageIndex>();
   const [indexProgress, setIndexProgress] = useState<string>();
   const [route, navigate] = useRoute();
