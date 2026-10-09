@@ -9,8 +9,7 @@ import { documentsSummary } from "./words";
 // planned from it, confirmed if need be, run, and the index catches up again. What it did is kept, newest last, so it
 // can be undone.
 
-// One that fades goes once it's been seen, as there's nothing left to do about it.
-export type Status = { state: "planning" | "running" | "done" | "failed"; message: string; fades?: boolean };
+export type Status = { state: "planning" | "running" | "done" | "failed"; message: string };
 
 type Done = { message: string; undo: Plan };
 
@@ -23,7 +22,8 @@ export type Operations = {
   busy: boolean;
   // Changing the card: nothing should read it.
   running: boolean;
-  canUndo: boolean;
+  // What undo would undo, when it can.
+  undoable?: string;
   // The plan, once it has run.
   perform: (message: string, makePlan: (context: Context) => Promise<Plan>, confirm?: Confirm) => Promise<Plan | undefined>;
   undo: () => Promise<void>;
@@ -103,7 +103,7 @@ export function useOperations(
     status,
     busy,
     running: status?.state === "running",
-    canUndo: !busy && history.length > 0,
+    undoable: busy ? undefined : history.at(-1)?.message,
     perform: (message, makePlan, confirm) =>
       exclusively(async () => {
         const ran = await go(message, makePlan, confirm);
@@ -121,7 +121,6 @@ export function useOperations(
         if (!ran) return;
         const rest = { message: partlyUndone(last.message), undo: remaining(last.undo, ran.done) };
         setHistory((history) => [...history.slice(0, -1), ...(ran.finished ? [] : [rest])]);
-        if (ran.finished) setStatus((status) => status && { ...status, fades: true });
       });
     },
   };

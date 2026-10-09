@@ -330,7 +330,9 @@ button:disabled {
   flex-basis: 330px;
 }
 
+/* Takes up any width the tools leave over. */
 .column:last-child {
+  flex-grow: 1;
   border-right: 0;
 }
 
@@ -784,8 +786,17 @@ button.link:hover {
   white-space: nowrap;
 }
 
+/* What went wrong stays until something else happens, so it can be read. */
 .status.fades {
-  animation: fade-out 1s 9s forwards;
+  animation: fade-out 1s 4s forwards;
+}
+
+.card-name .undo {
+  color: var(--accent);
+}
+
+.card-name .undo:hover {
+  color: var(--bright);
 }
 
 @keyframes fade-out {

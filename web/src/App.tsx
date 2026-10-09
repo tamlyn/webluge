@@ -39,6 +39,8 @@ function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
   const [choice, setChoice] = useState<{ paths: string[]; anchor: string }>();
   // Counts changes to the card, so the browser lists folders again.
   const [version, setVersion] = useState(0);
+  // Pointing at Undo says what it would undo, in place of the status, which may have faded or be about something else.
+  const [undoHinted, setUndoHinted] = useState(false);
   const context = useRef<AudioContext>(undefined);
   // The same function every render, as previews decode and play again when it changes.
   const audioContext = useCallback(() => (context.current ??= new AudioContext({ sampleRate })), []);
@@ -137,20 +139,40 @@ function CardView({ card, onClose }: { card: Card; onClose: () => void }) {
         </nav>
         <div className="card-name">
           {indexProgress && <span>{indexProgress}</span>}
-          {status && (
-            <span
-              className={`status ${status.state === "failed" ? "error" : ""} ${status.fades ? "fades" : ""}`}
-              role="status"
-              title={status.message}
-            >
-              {status.message}
+          {undoHinted && operations.undoable ? (
+            <span className="status" title={operations.undoable}>
+              Undo: {operations.undoable}
             </span>
+          ) : (
+            status && (
+              <span
+                className={`status ${status.state === "failed" ? "error" : ""} ${status.state === "done" ? "fades" : ""}`}
+                role="status"
+                title={status.message}
+              >
+                {status.message}
+              </span>
+            )
           )}
-          {operations.canUndo && (
-            <button className="text-button" onClick={operations.undo}>
+          {operations.undoable && (
+            <button
+              className="text-button undo"
+              onClick={() => {
+                // It goes while undoing, so it never sees the pointer leave.
+                setUndoHinted(false);
+                operations.undo();
+              }}
+              onMouseEnter={() => setUndoHinted(true)}
+              onMouseLeave={() => setUndoHinted(false)}
+              onFocus={() => setUndoHinted(true)}
+              onBlur={() => setUndoHinted(false)}
+            >
               Undo
             </button>
           )}
+          <button className="text-button" disabled={!index} onClick={() => navigate({ view: "missing" })}>
+            Missing samples
+          </button>
           <button
             className="key"
             disabled={operations.busy}

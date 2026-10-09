@@ -67,9 +67,6 @@ export function Browser({ card, selection, index, tools, onSelect, ...props }: P
           <button className="text-button" disabled={!tools.onDelete} onClick={tools.onDelete} title="Cmd-Backspace">
             Delete
           </button>
-          <button className="text-button" disabled={!index} onClick={() => onSelect({ view: "missing" })}>
-            Missing samples
-          </button>
         </div>
       </div>
       <div className="columns" ref={columns}>
