@@ -171,3 +171,83 @@ function Subfolders({ card, folder, onOpen }: { card: Card; folder: string; onOp
     </>
   );
 }
+
+// Picks a synth to compare another with, browsing the synths folder from the one it's compared with now.
+export function ComparePickerDialog({
+  card,
+  current,
+  onPick,
+  onCancel,
+}: {
+  card: Card;
+  // A synth's path, or empty for a new synth.
+  current: string;
+  onPick: (path: string) => void;
+  onCancel: () => void;
+}) {
+  const [folder, setFolder] = useState(current ? parentPath(current) : "SYNTHS");
+  return (
+    <Dialog title="Compare with" onCancel={onCancel}>
+      <div className="picker-head">
+        <button
+          type="button"
+          className="text-button"
+          disabled={folder.toUpperCase() === "SYNTHS"}
+          onClick={() => setFolder(parentPath(folder))}
+        >
+          Up
+        </button>
+        <span className="picker-path" title={folder}>
+          {folder}
+        </span>
+      </div>
+      <ul className="picker">
+        <ErrorBoundary
+          key={folder}
+          fallback={(error) => <li className="empty error">Couldn't list this folder: {String(error)}</li>}
+        >
+          <Synths card={card} folder={folder} current={current} onOpen={setFolder} onPick={onPick} />
+        </ErrorBoundary>
+      </ul>
+      <div className="dialog-buttons">
+        <button type="button" className="key" onClick={() => onPick("")} aria-pressed={!current}>
+          New synth
+        </button>
+        <button type="button" className="key" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+function Synths(props: {
+  card: Card;
+  folder: string;
+  current: string;
+  onOpen: (folder: string) => void;
+  onPick: (path: string) => void;
+}) {
+  const { card, folder, current, onOpen, onPick } = props;
+  const entries = useAsync(
+    async () => (await card.list(folder)).filter((e) => e.kind === "folder" || /\.xml$/i.test(e.name)),
+    [card, folder],
+  );
+  return (
+    <>
+      {entries?.map((entry) => (
+        <li key={entry.path}>
+          <button
+            type="button"
+            className={entry.kind === "folder" ? "picker-folder" : ""}
+            aria-current={entry.path === current || undefined}
+            onClick={() => (entry.kind === "folder" ? onOpen(entry.path) : onPick(entry.path))}
+          >
+            {entry.kind === "folder" ? entry.name : entry.name.replace(/\.xml$/i, "")}
+          </button>
+        </li>
+      ))}
+      {entries?.length === 0 && <li className="empty">No synths</li>}
+    </>
+  );
+}

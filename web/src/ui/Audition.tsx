@@ -44,17 +44,89 @@ function isBlack(note: number): boolean {
   return [1, 3, 6, 8, 10].includes(note % 12);
 }
 
-// Two octaves of a synth's notes, which can be moved up and down.
+type Mode = "play" | "hold" | "arp";
+
+const modes: { mode: Mode; label: string; hint: string }[] = [
+  { mode: "play", label: "Play", hint: "Hold a key to play it" },
+  { mode: "hold", label: "Hold", hint: "Click keys to hold a chord" },
+  { mode: "arp", label: "Arp", hint: "Click keys to arpeggiate them" },
+];
+
+// An arpeggio's notes, sixteenths at 100 BPM, each held until the next.
+const arpStep = 150;
+
+// Two octaves of a synth's notes, which can be moved up and down. Played as held, or latched by a click to sound
+// together or arpeggiated, to leave both hands free for the settings.
 export function Keyboard({ disabled, onAudition }: { disabled: boolean; onAudition: Audition }) {
   const [lowest, setLowest] = useState(48);
+  const [mode, setMode] = useState<Mode>("play");
+  // Ascending, for the arpeggio.
+  const [latched, setLatched] = useState<number[]>([]);
+  const [arpeggiated, setArpeggiated] = useState<number>();
+  const latest = useRef({ onAudition, latched });
+  latest.current = { onAudition, latched };
   const highest = lowest + 12 * numOctaves;
   const notes = Array.from({ length: highest - lowest + 1 }, (_, i) => lowest + i);
   const whites = notes.filter((note) => !isBlack(note));
+
+  useEffect(() => {
+    if (mode !== "arp") return;
+    let step = 0;
+    let sounding: number | undefined;
+    const timer = setInterval(() => {
+      const { latched, onAudition } = latest.current;
+      if (sounding !== undefined) onAudition(sounding, false);
+      sounding = latched.length ? latched[step++ % latched.length] : undefined;
+      if (sounding !== undefined) onAudition(sounding, true);
+      setArpeggiated(sounding);
+    }, arpStep);
+    return () => {
+      clearInterval(timer);
+      if (sounding !== undefined) latest.current.onAudition(sounding, false);
+      setArpeggiated(undefined);
+    };
+  }, [mode]);
+
+  // Held notes sound together until they're let go or the mode changes; the arpeggio plays them itself.
+  function changeMode(next: Mode) {
+    if (mode === "hold") for (const note of latched) onAudition(note, false);
+    if (next === "play") setLatched([]);
+    else if (next === "hold") for (const note of latched) onAudition(note, true);
+    setMode(next);
+  }
+
+  function press(note: number, on: boolean) {
+    if (mode === "play") return onAudition(note, on);
+    if (!on) return;
+    const releasing = latched.includes(note);
+    if (mode === "hold") onAudition(note, !releasing);
+    setLatched(releasing ? latched.filter((n) => n !== note) : [...latched, note].sort((a, b) => a - b));
+  }
+
   return (
     <>
       <div className="section-head">
         <h3 className="label">Keys</h3>
         <span className="octaves">
+          <span className="keys-modes" role="radiogroup" aria-label="Keys">
+            {modes.map((m) => (
+              <button
+                key={m.mode}
+                className="text-button"
+                role="radio"
+                aria-checked={mode === m.mode}
+                title={m.hint}
+                onClick={() => changeMode(m.mode)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </span>
+          {latched.length > 0 && (
+            <button className="text-button" onClick={() => changeMode("play")}>
+              Release
+            </button>
+          )}
           <button className="text-button" disabled={lowest === 0} onClick={() => setLowest(lowest - 12)}>
             Oct −
           </button>
@@ -70,12 +142,16 @@ export function Keyboard({ disabled, onAudition }: { disabled: boolean; onAuditi
         {notes.map((note) => (
           <HoldButton
             key={note}
-            className={isBlack(note) ? "black" : "white"}
+            className={[
+              isBlack(note) ? "black" : "white",
+              latched.includes(note) ? "latched" : "",
+              note === arpeggiated ? "lit" : "",
+            ].join(" ")}
             // Black keys sit on the line between the white keys either side.
             style={isBlack(note) ? ({ "--at": whites.filter((white) => white < note).length } as CSSProperties) : {}}
             label={noteName(note)}
             disabled={disabled}
-            onHold={(on) => onAudition(note, on)}
+            onHold={(on) => press(note, on)}
           >
             {note % 12 === 0 && <span className="label">{noteName(note)}</span>}
           </HoldButton>

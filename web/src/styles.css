@@ -504,6 +504,11 @@ button:disabled {
   gap: 14px;
 }
 
+/* Scrolled rather than squeezed when there's more than fits. */
+.details > * {
+  flex-shrink: 0;
+}
+
 .details.empty {
   justify-content: center;
   align-items: center;
@@ -1079,6 +1084,26 @@ button.link:hover {
   color: var(--bg);
 }
 
+/* Latched by Hold or Arp: lit dimly between the arpeggio's notes. */
+.keyboard .latched {
+  border-color: var(--accent);
+}
+
+.keyboard .white.latched:not(.lit) {
+  background: var(--chosen);
+}
+
+.keys-modes {
+  display: flex;
+  gap: 8px;
+  padding-right: 6px;
+  border-right: 1px solid var(--line-strong);
+}
+
+.keys-modes [aria-checked="true"] {
+  color: var(--accent);
+}
+
 @media (max-width: 800px) {
   .top {
     flex-wrap: wrap;
@@ -1207,7 +1232,383 @@ button.link:hover {
   color: var(--bright);
 }
 
+.picker .picker-folder::after {
+  content: " ›";
+  color: var(--dim);
+}
+
+.picker [aria-current] {
+  color: var(--accent);
+}
+
 .picker .empty {
   padding: 6px 12px;
   color: var(--dim);
+}
+
+/* Patch editor: how a synth differs from what it's compared with is lit; everything else is dim. */
+.patch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.patch-silent-count {
+  color: var(--dim);
+}
+
+.patch-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+  font-size: 12px;
+}
+
+.patch-untouched {
+  font-size: 12px;
+}
+
+.patch-base {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.patch-base-button {
+  max-width: 260px;
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patch-base-button:hover {
+  border-color: var(--soft);
+}
+
+.patch-options {
+  grid-area: control;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.patch-options button {
+  position: relative;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: none;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.patch-options button:hover {
+  color: var(--bright);
+}
+
+.patch-options .selected {
+  border-color: var(--line-strong);
+  background: var(--selected);
+  color: var(--bright);
+}
+
+.patch-row.changed .patch-options .selected {
+  border-color: var(--accent);
+  background: var(--chosen);
+}
+
+/* The base's option, marked as a bar marks the base's value. */
+.patch-options .base::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 10px;
+  height: 2px;
+  margin-left: -5px;
+  background: var(--soft);
+  opacity: 0.6;
+}
+
+.patch-section {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.patch-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 8px 0 4px;
+}
+
+.patch-section-head h4 {
+  font-weight: 500;
+  color: var(--soft);
+}
+
+.patch-section-head .hint {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.patch-row {
+  display: grid;
+  grid-template-columns: 14px minmax(110px, 170px) minmax(80px, 1fr) minmax(90px, 140px);
+  grid-template-areas: "switch label control value" ". note note note";
+  align-items: center;
+  column-gap: 12px;
+  padding: 5px 0;
+  color: var(--dim);
+}
+
+.patch-row.changed {
+  color: var(--text);
+}
+
+.patch-row.silent {
+  opacity: 0.55;
+}
+
+.change-switch {
+  grid-area: switch;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: none;
+}
+
+.change-switch.on {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.change-switch.same {
+  width: 6px;
+  height: 6px;
+  margin: 3px;
+  border: 0;
+  background: var(--off);
+}
+
+.patch-label {
+  grid-area: label;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patch-value {
+  grid-area: value;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+
+.patch-reference {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.patch-note {
+  grid-area: note;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.patch-bar {
+  grid-area: control;
+  position: relative;
+  height: 18px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* The track. */
+.patch-bar::before {
+  content: "";
+  position: absolute;
+  inset: 8px 0;
+  background: var(--off);
+  border-radius: 1px;
+}
+
+.patch-bar-fill,
+.patch-bar-reach,
+.patch-bar-base {
+  position: absolute;
+  pointer-events: none;
+}
+
+.patch-bar-fill {
+  top: 7px;
+  height: 4px;
+  left: calc(var(--fill-from) * 100%);
+  width: calc((var(--fill-to) - var(--fill-from)) * 100%);
+  background: var(--muted);
+}
+
+.patch-row.changed .patch-bar-fill {
+  background: var(--accent);
+}
+
+.patch-bar-reach {
+  top: 4px;
+  height: 10px;
+  left: calc(var(--low) * 100%);
+  width: calc((var(--high) - var(--low)) * 100%);
+  background: rgb(255 106 43 / 18%);
+  border-radius: 2px;
+}
+
+.patch-row:not(.changed) .patch-bar-reach {
+  background: rgb(255 255 255 / 7%);
+}
+
+/* Where the base sets it. */
+.patch-bar-base {
+  top: 2px;
+  height: 14px;
+  width: 2px;
+  margin-left: -1px;
+  left: calc(var(--base) * 100%);
+  background: var(--soft);
+  opacity: 0.6;
+}
+
+.patch-envelopes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 4px 0 8px;
+}
+
+.patch-envelope {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.patch-envelope svg {
+  width: 100%;
+  height: 60px;
+  background: var(--oled);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.patch-envelope path {
+  fill: none;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.patch-envelope-base {
+  stroke: var(--line-strong);
+  stroke-dasharray: 4 3;
+}
+
+.patch-envelope-now {
+  stroke: var(--muted);
+}
+
+.patch-envelope-now.changed {
+  stroke: var(--accent);
+}
+
+.patch-matrix {
+  display: grid;
+  grid-template-columns: minmax(110px, 170px) repeat(var(--sources), minmax(44px, 1fr));
+  gap: 3px;
+  align-items: center;
+  overflow-x: auto;
+}
+
+.patch-matrix-source {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.patch-matrix-destination {
+  color: var(--soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.patch-cell {
+  position: relative;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--raised);
+  color: var(--dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.patch-cell.empty {
+  background: none;
+  border-color: var(--grid);
+}
+
+.patch-cell.same {
+  color: var(--muted);
+}
+
+.patch-cell.changed {
+  color: var(--bright);
+  border-color: var(--accent);
+}
+
+.patch-cell.off {
+  border: 1px dashed var(--accent);
+  color: var(--dim);
+}
+
+.patch-cell.edited .patch-cell-value {
+  text-decoration: underline dotted;
+}
+
+/* The amount, filling from the middle. */
+.patch-cell-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% + min(var(--amount), 0) * 50%);
+  width: calc(max(var(--amount), -1 * var(--amount)) * 50%);
+  background: rgb(255 255 255 / 8%);
+}
+
+.patch-cell.changed .patch-cell-bar {
+  background: rgb(255 106 43 / 35%);
+}
+
+.patch-cell-value {
+  position: relative;
 }

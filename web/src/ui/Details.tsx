@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type Card, baseName, parentPath } from "../card/card";
+import { encodeCp437 } from "../card/cp437";
 import { pathKey } from "../card/references";
-import { findSample, isDocument, type UsageIndex } from "../card/usageIndex";
+import { findSample, isDocument, readDocument, type UsageIndex } from "../card/usageIndex";
+import { type Edits, applyEdits } from "../patch/patch";
 import { collectDocumentFiles } from "../preview/documentFiles";
+import type { CardFile } from "../preview/firmware";
 import { Player } from "../preview/player";
 import { ArrangementView } from "./ArrangementView";
 import { DrumPads, Keyboard } from "./Audition";
@@ -10,6 +13,7 @@ import { ClipSkeleton, ClipView } from "./ClipView";
 import { Deck, type PlayState, useRememberedFlag } from "./Deck";
 import { isAudio, isSong } from "./files";
 import { Oled } from "./Oled";
+import { PatchEditor } from "./PatchEditor";
 import { SamplePreview } from "./SamplePreview";
 import { useAsync } from "./useAsync";
 import { documentKind, plural } from "./words";
@@ -31,7 +35,7 @@ export function Details(props: Props) {
       ) : isSong(path) ? (
         <SongDetails {...props} />
       ) : isDocument(path) ? (
-        <PresetDetails {...props} />
+        <PresetDetails key={path} {...props} />
       ) : (
         <TextDetails {...props} />
       )}
@@ -122,30 +126,50 @@ function samplesSummary({ samples, found }: ReturnType<typeof useSamples>): stri
   return `${plural(samples.length, "sample")}${found && samples.length ? (numMissing ? `, ${numMissing} missing` : ", all on card") : ""}`;
 }
 
-// A kit or synth, loaded into the firmware as soon as it's selected, to play its drums or notes.
+// A kit or synth, loaded into the firmware as soon as it's selected, to play its drums or notes. A synth loads again
+// with each edit, as the firmware reads a patch only as it loads.
 function PresetDetails({ card, path, index, audioContext, onGoTo }: Props) {
   const samples = useSamples(card, path, index);
   const [loading, setLoading] = useState<Loading>({ state: "loading" });
   const player = loading.state === "ready" ? loading.player : undefined;
+  const kind = documentKind(path);
+  const xml = useAsync(() => (kind === "synth" ? readDocument(card, path) : Promise.resolve(undefined)), [card, path]);
+  const [edits, setEdits] = useState<Edits>({});
+  // Gathered once, as a synth's samples can be large.
+  const collected = useRef<Promise<CardFile[]>>(undefined);
+  // Played again each time it loads, so that a chord or an arpeggio carries on through edits.
+  const sounding = useRef(new Set<number>());
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
   useEffect(() => {
     setLoading({ state: "loading" });
     const failed = (message: string) => setLoading({ state: "failed", message });
-    return loadPlayer(card, path, true, browseDelay, failed, (loaded) => {
+    const edited = xml && Object.keys(edits).length ? encodeCp437(applyEdits(xml, edits)) : undefined;
+    const files = async () => {
+      collected.current ??= collectDocumentFiles(card, path);
+      // Copied, as loading hands each file's buffer over to the worker.
+      const all = await collected.current;
+      return all.map((f) => ({ ...f, data: f.path === path && edited ? edited : f.data.slice() }));
+    };
+    const delay = collected.current ? editDelay : browseDelay;
+    return loadPlayer(files, path, true, delay, failed, (loaded) => {
       setLoading({ state: "ready", player: loaded });
+      setLoadedOnce(true);
       // Silent until auditioned, so it can run before the page has been clicked to allow sound.
       loaded.start(audioContext(), failed);
+      for (const y of sounding.current) loaded.audition(y, true);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [card, path]);
+  }, [card, path, edits]);
 
   function audition(y: number, on: boolean) {
     // Resumed while handling the press, as browsers only allow it then.
     if (on) void audioContext().resume();
+    if (on) sounding.current.add(y);
+    else sounding.current.delete(y);
     player?.audition(y, on);
   }
 
-  const kind = documentKind(path);
   return (
     <>
       <Oled title={withoutExtension(path)} subtitle={`${kind} · ${samplesSummary(samples)}`} />
@@ -154,8 +178,9 @@ function PresetDetails({ card, path, index, audioContext, onGoTo }: Props) {
       ) : kind === "kit" ? (
         <DrumPads kit={player?.song.clips[0]} onAudition={audition} />
       ) : (
-        <Keyboard disabled={!player} onAudition={audition} />
+        <Keyboard disabled={!loadedOnce} onAudition={audition} />
       )}
+      {xml && <PatchEditor card={card} xml={xml} edits={edits} onEdit={setEdits} />}
       <SampleList {...samples} onGoTo={onGoTo} />
     </>
   );
@@ -239,11 +264,13 @@ type Loading = { state: "loading" } | { state: "ready"; player: Player } | { sta
 
 // Long enough to skip past songs, kits and synths while arrowing through a folder, without loading each one.
 const browseDelay = 250;
+// Long enough to load once for a run of arrow key presses on a setting.
+const editDelay = 150;
 
 // Loads a song, kit or synth into a new firmware instance after the delay. Returns a function that abandons the load,
 // or stops the player once it's loaded.
 function loadPlayer(
-  card: Card,
+  collect: () => Promise<CardFile[]>,
   path: string,
   preset: boolean,
   delay: number,
@@ -254,7 +281,7 @@ function loadPlayer(
   let loaded: Player | undefined;
   const timer = setTimeout(async () => {
     try {
-      const files = await collectDocumentFiles(card, path);
+      const files = await collect();
       if (!current) return;
       loaded = await Player.load(files, path, preset);
       if (!current) return loaded.stop();
@@ -290,7 +317,8 @@ function SongDetails({ card, path, index, audioContext, onGoTo }: Props) {
       setLoading({ state: "failed", message });
       setPlaying(false);
     };
-    return loadPlayer(card, path, false, loads ? 0 : browseDelay, failed, (loaded) => {
+    const files = () => collectDocumentFiles(card, path);
+    return loadPlayer(files, path, false, loads ? 0 : browseDelay, failed, (loaded) => {
       setLoading({ state: "ready", player: loaded });
       setShown(loaded);
     });
