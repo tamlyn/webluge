@@ -13,7 +13,7 @@ async function readCard(folder: string): Promise<CardFile[]> {
   for (const entry of await readdir(folder, { recursive: true, withFileTypes: true })) {
     if (entry.isFile() && !entry.name.startsWith(".")) {
       const path = join(entry.parentPath, entry.name);
-      files.push({ path: relative(folder, path), data: await readFile(path) });
+      files.push({ path: relative(folder, path), data: new Blob([await readFile(path)]) });
     }
   }
   return files;
@@ -38,8 +38,8 @@ const clipInstances = [0, loopLength, 0, loopLength, loopLength, 1].map((n) => n
 async function loadInArrangerView() {
   const files = await readCard(card);
   const song = files.find((file) => file.path === songPath)!;
-  const xml = song.data.toString().replace("<song", '<song inArrangementView="1"');
-  song.data = Buffer.from(xml.replace(/<kit\s/, `<kit clipInstances="0x${clipInstances}" `));
+  const xml = (await song.data.text()).replace("<song", '<song inArrangementView="1"');
+  song.data = new Blob([xml.replace(/<kit\s/, `<kit clipInstances="0x${clipInstances}" `)]);
   return Firmware.loadSong(files, songPath, () => {});
 }
 

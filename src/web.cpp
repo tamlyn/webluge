@@ -32,7 +32,7 @@
 
 namespace {
 
-using HostString = std::basic_string<char, std::char_traits<char>, webluge::HostAllocator<char>>;
+using webluge::HostString;
 
 webluge::CardImage card;
 // Interleaved stereo.
@@ -269,7 +269,7 @@ bool boot(const char* cardFolder) {
 		return false;
 	}
 	card = std::move(*image);
-	webluge_disk_insert(card.data(), card.size() / WEBLUGE_SECTOR_SIZE);
+	card.insert();
 	webluge::boot();
 	webluge_audio_set_sink(collect, nullptr);
 	return true;

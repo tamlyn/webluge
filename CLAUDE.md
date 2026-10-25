@@ -43,14 +43,17 @@ There's no formatter or linter. Don't run Prettier; wrap code and comments by ha
 - `src/include` comes first on the include path, so its headers replace the firmware's of the same name. Prefer
   wrapping the original with `#include_next` over copying it.
 - `src/hal` stubs the hardware: pads, displays, USB/MIDI, timers, the codec (`ssi.c`) and the SD card (`diskio.c`,
-  backed by an in-memory FAT image built with FatFs itself, as sample streaming reads raw clusters).
+  backed by a FAT image built with FatFs itself, as sample streaming reads raw clusters). The image (`src/card/image.h`)
+  keeps only the sectors written to it in memory; the rest come from the host files it was built from, when they're
+  read. In the browser, those are the page's `File`s, mounted in the worker with WORKERFS.
 - `src/boot.cpp` follows `deluge_main` without its hardware setup. Compare it with `deluge_main` on each firmware upgrade.
 - Time is virtual (`src/hal/clock.cpp`): it moves on only when the firmware's own task scheduler is idle, 16 frames at a
   time, and the codec plays the frames it passes. Audio is driven by the device's own scheduler, not by calling the
   engine with a fixed block size, so stem export and render windows behave as on the device.
-- wasm memory keeps the device's memory map: SDRAM at `0x0C000000`, on-chip RAM at `0x20000000`, and Emscripten's own
-  memory above them (`-sGLOBAL_BASE`). The firmware's `operator new` serves only that SDRAM, so large host buffers such
-  as card images use `HostAllocator`.
+- wasm memory holds the device's memory map, moved down so that a phone will allocate it: SDRAM at `0x00400000`,
+  on-chip RAM at `0x04400000` (`src/include/RZA1/cpu_specific.h`), and Emscripten's own memory above them
+  (`-sGLOBAL_BASE`). The firmware's `operator new` serves only that SDRAM, so host data that outlives a call, such as
+  the card image, uses `HostAllocator`.
 - Builds use `-ffp-contract=off` (never fast-math): the device never fuses multiply-adds and the DX7 kernel port depends
   on it.
 

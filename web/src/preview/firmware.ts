@@ -3,7 +3,9 @@
 import createWebluge, { type Webluge } from "@firmware/webluge_web.mjs";
 import { decodeCp437 } from "../card/cp437";
 
-export type CardFile = { path: string; data: Uint8Array };
+// The firmware reads a file only as it needs it, so a File from the card isn't read into memory first. It must stay
+// as it is on the card while the firmware plays.
+export type CardFile = { path: string; data: Blob };
 
 // A song's session clips and arrangement, as the firmware loaded them. Positions and lengths are in ticks.
 export type SongDescription = {
@@ -72,8 +74,8 @@ export function bpm(framesPerTick: number, ticksPerQuarterNote: number): number 
 
 const cardFolder = "/card";
 
-// Songs can spell a folder or file in different cases, which the card doesn't mind but MEMFS does: copied in as
-// spelt, one would be two, and the card image can't hold both. Each is spelt as it was first.
+// Songs can spell a folder or file in different cases, which the card doesn't mind but Emscripten's filesystem does:
+// as spelt, one would be two, and the card image can't hold both. Each is spelt as it was first.
 function oneSpelling(): (path: string) => string {
   const spellings = new Map<string, string>();
   return function spell(path: string): string {
@@ -124,21 +126,20 @@ export class Firmware {
   ): Promise<{ module: Webluge; numMissing: number }> {
     const module = await createWebluge(log && { print: log, printErr: log });
     const spell = oneSpelling();
-    const written = new Set<string>();
-    const folders = new Set<string>();
-    for (const { path, data } of files) {
-      const file = `${cardFolder}/${spell(path)}`;
-      const folder = file.replace(/\/[^/]*$/, "");
-      module.FS.mkdirTree(folder);
-      module.FS.writeFile(file, data);
-      written.add(file);
-      for (let f = folder; f !== cardFolder; f = f.replace(/\/[^/]*$/, "")) folders.add(f);
+    const blobs = [...new Map(files.map(({ path, data }) => [spell(path), data]))].map(([name, data]) => ({ name, data }));
+    if ("FileReaderSync" in globalThis) {
+      module.FS.mkdir(cardFolder);
+      module.FS.mount(module.FS.filesystems.WORKERFS, { blobs }, cardFolder);
+    } else {
+      // Node, in tests, has no FileReaderSync for WORKERFS to read with.
+      for (const { name, data } of blobs) {
+        const file = `${cardFolder}/${name}`;
+        module.FS.mkdirTree(file.replace(/\/[^/]*$/, ""));
+        module.FS.writeFile(file, new Uint8Array(await data.arrayBuffer()));
+      }
     }
     const numMissing = module.ccall(entry, "number", ["string", "string"], [cardFolder, path]);
     if (numMissing < 0) throw new Error(`Couldn't load ${path}`);
-    // The card image has its own copy now.
-    for (const file of written) module.FS.unlink(file);
-    for (const folder of [...folders].sort().reverse()) module.FS.rmdir(folder);
     return { module, numMissing };
   }
 

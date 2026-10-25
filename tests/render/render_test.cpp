@@ -53,7 +53,7 @@ void bootWithCard(const fs::path& folder) {
 		std::fprintf(stderr, "%s\n", image.error().c_str());
 		std::_Exit(1);
 	}
-	webluge_disk_insert(image->data(), image->size() / WEBLUGE_SECTOR_SIZE);
+	image->insert();
 	webluge::boot();
 	webluge_audio_set_sink([](int32_t left, int32_t right, void*) { played.push_back(left); }, nullptr);
 }

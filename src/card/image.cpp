@@ -2,9 +2,12 @@
 #include "hal/disk.h"
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
+#include <fcntl.h>
 #include <fstream>
 #include <map>
 #include <optional>
+#include <unistd.h>
 
 extern "C" {
 #include "ff.h"
@@ -19,8 +22,8 @@ namespace {
 // size shapes its loading.
 constexpr uint32_t kClusterSize = 32768;
 constexpr uint32_t kDirectoryEntrySize = 32;
-// wasm32 memory tops out at 4GB, part of which the firmware's own memory map takes.
-constexpr uint64_t kMaxImageBytes = 2ull << 30;
+// FatFs addresses sectors with 32 bits (FF_LBA64 is off).
+constexpr uint64_t kMaxImageSectors = UINT32_MAX;
 
 struct Entry {
 	fs::path hostPath;
@@ -148,23 +151,21 @@ std::string describe(const Entry& entry, FRESULT result) {
 	return entry.hostPath.string() + ": FatFs error " + std::to_string(result);
 }
 
-std::expected<void, std::string> copyFile(const Entry& entry, HostVector<char>& buffer) {
-	std::ifstream in(entry.hostPath, std::ios::binary);
-	if (!in) {
-		return std::unexpected(entry.hostPath.string() + ": can't read");
-	}
+// Allocates the file's clusters in one run without writing them, and has the image read them from the host file.
+// On an empty volume, f_expand lays files out as writing them would.
+std::expected<void, std::string> allocateFile(CardImage& image, const Entry& entry) {
 	FIL file;
 	FRESULT result = f_open(&file, entry.cardPath.c_str(), FA_WRITE | FA_CREATE_NEW);
 	if (result != FR_OK) {
 		return std::unexpected(describe(entry, result));
 	}
-	while (result == FR_OK && in) {
-		in.read(buffer.data(), buffer.size());
-		UINT length = in.gcount();
-		UINT written;
-		result = f_write(&file, buffer.data(), length, &written);
-		if (result == FR_OK && written != length) {
-			result = FR_DENIED; // Volume full
+	if (entry.size) {
+		result = f_expand(&file, entry.size, 1);
+		if (result == FR_OK) {
+			FATFS* fileSystem = file.obj.fs;
+			uint32_t numClusters = clustersFor(entry.size);
+			image.addFile(fileSystem->database + (file.obj.sclust - 2) * fileSystem->csize,
+			              numClusters * fileSystem->csize, entry.hostPath);
 		}
 	}
 	FRESULT closeResult = f_close(&file);
@@ -183,12 +184,12 @@ std::expected<void, std::string> format(CardImage& image, uint64_t sectors) {
 	// f_mkfs picks FAT12, 16 or 32 from the cluster count, and gives up when the count after its own overhead lands
 	// on the other side of a boundary between them. A little more space moves it clear.
 	for (int attempt = 0; attempt < 8; attempt++, sectors += sectors / 16) {
-		if (sectors * WEBLUGE_SECTOR_SIZE > kMaxImageBytes) {
+		if (sectors > kMaxImageSectors) {
 			return std::unexpected("needs a " + std::to_string(sectors * WEBLUGE_SECTOR_SIZE >> 20)
-			                       + "MB image, more than the " + std::to_string(kMaxImageBytes >> 20) + "MB limit");
+			                       + "MB image, more than FAT32 can address");
 		}
-		image.assign(sectors * WEBLUGE_SECTOR_SIZE, 0);
-		webluge_disk_insert(image.data(), sectors);
+		image = CardImage(sectors);
+		image.insert();
 		FRESULT result = f_mkfs("", &options, work.data(), work.size());
 		if (result == FR_OK) {
 			return {};
@@ -200,21 +201,20 @@ std::expected<void, std::string> format(CardImage& image, uint64_t sectors) {
 	return std::unexpected("f_mkfs found no valid layout");
 }
 
-std::expected<void, std::string> fill(const std::vector<Entry>& entries) {
-	HostVector<char> buffer(1 << 20);
+std::expected<void, std::string> fill(CardImage& image, const std::vector<Entry>& entries) {
 	for (const Entry& entry : entries) {
-		std::expected<void, std::string> copied;
+		std::expected<void, std::string> added;
 		if (entry.isFolder) {
 			FRESULT result = f_mkdir(entry.cardPath.c_str());
 			if (result != FR_OK) {
-				copied = std::unexpected(describe(entry, result));
+				added = std::unexpected(describe(entry, result));
 			}
 		}
 		else {
-			copied = copyFile(entry, buffer);
+			added = allocateFile(image, entry);
 		}
-		if (!copied) {
-			return copied;
+		if (!added) {
+			return added;
 		}
 	}
 	return {};
@@ -276,6 +276,115 @@ std::expected<void, std::string> copyFolderFromCard(const std::string& cardFolde
 
 } // namespace
 
+bool CardImage::read(uint8_t* buffer, uint32_t sector, uint32_t count) const {
+	uint32_t end = sector + count;
+	auto nextWritten = written.lower_bound(sector);
+	auto nextExtent = std::ranges::upper_bound(extents, sector, {}, &Extent::firstSector);
+	while (sector < end) {
+		while (nextExtent != extents.end() && nextExtent->firstSector <= sector) {
+			++nextExtent;
+		}
+		if (nextWritten != written.end() && nextWritten->first == sector) {
+			std::memcpy(buffer, nextWritten->second.data(), WEBLUGE_SECTOR_SIZE);
+			++nextWritten;
+			sector++;
+			buffer += WEBLUGE_SECTOR_SIZE;
+			continue;
+		}
+		uint32_t runEnd = nextWritten == written.end() ? end : std::min(end, nextWritten->first);
+		const Extent* extent = nextExtent == extents.begin() ? nullptr : &*std::prev(nextExtent);
+		if (extent && sector < extent->firstSector + extent->numSectors) {
+			runEnd = std::min(runEnd, extent->firstSector + extent->numSectors);
+			if (!readFile(buffer, *extent, sector, runEnd - sector)) {
+				return false;
+			}
+		}
+		else {
+			if (nextExtent != extents.end()) {
+				runEnd = std::min(runEnd, nextExtent->firstSector);
+			}
+			std::memset(buffer, 0, (runEnd - sector) * WEBLUGE_SECTOR_SIZE);
+		}
+		buffer += (runEnd - sector) * WEBLUGE_SECTOR_SIZE;
+		sector = runEnd;
+	}
+	return true;
+}
+
+bool CardImage::readFile(uint8_t* buffer, const Extent& extent, uint32_t sector, uint32_t count) const {
+	int file = open(extent.hostPath.c_str(), O_RDONLY);
+	if (file < 0) {
+		return false;
+	}
+	size_t length = count * WEBLUGE_SECTOR_SIZE;
+	off_t offset = off_t{sector - extent.firstSector} * WEBLUGE_SECTOR_SIZE;
+	size_t done = 0;
+	ssize_t n = 1;
+	while (done < length && (n = pread(file, buffer + done, length - done, offset + done)) > 0) {
+		done += n;
+	}
+	close(file);
+	if (n < 0) {
+		return false;
+	}
+	// Past the file's end, to the end of its last cluster.
+	std::memset(buffer + done, 0, length - done);
+	return true;
+}
+
+void CardImage::write(const uint8_t* buffer, uint32_t sector, uint32_t count) {
+	for (uint32_t end = sector + count; sector < end; sector++, buffer += WEBLUGE_SECTOR_SIZE) {
+		std::memcpy(written[sector].data(), buffer, WEBLUGE_SECTOR_SIZE);
+	}
+}
+
+void CardImage::insert() {
+	webluge_disk_insert({
+	    .card = this,
+	    .numSectors = sectors,
+	    .read = [](void* card, uint8_t* buffer, uint32_t sector, uint32_t count) {
+		    return static_cast<CardImage*>(card)->read(buffer, sector, count);
+	    },
+	    .write = [](void* card, const uint8_t* buffer, uint32_t sector, uint32_t count) {
+		    static_cast<CardImage*>(card)->write(buffer, sector, count);
+		    return true;
+	    },
+	});
+}
+
+void CardImage::addFile(uint32_t firstSector, uint32_t numSectors, const fs::path& hostPath) {
+	Extent extent{firstSector, numSectors, hostPath.c_str()};
+	extents.insert(std::ranges::upper_bound(extents, firstSector, {}, &Extent::firstSector), std::move(extent));
+}
+
+std::expected<CardImage, std::string> openCardImage(const fs::path& imageFile) {
+	std::error_code error;
+	uintmax_t size = fs::file_size(imageFile, error);
+	if (error || !size || size % WEBLUGE_SECTOR_SIZE || size / WEBLUGE_SECTOR_SIZE > kMaxImageSectors) {
+		return std::unexpected(imageFile.string() + ": not a card image");
+	}
+	CardImage image(size / WEBLUGE_SECTOR_SIZE);
+	image.addFile(0, image.numSectors(), imageFile);
+	return image;
+}
+
+std::expected<void, std::string> saveCardImage(const CardImage& image, const fs::path& imageFile) {
+	std::ofstream out(imageFile, std::ios::binary);
+	HostVector<uint8_t> buffer(kClusterSize);
+	uint32_t sectorsPerBuffer = kClusterSize / WEBLUGE_SECTOR_SIZE;
+	for (uint32_t sector = 0; out && sector < image.numSectors(); sector += sectorsPerBuffer) {
+		uint32_t count = std::min(sectorsPerBuffer, image.numSectors() - sector);
+		if (!image.read(buffer.data(), sector, count)) {
+			return std::unexpected(imageFile.string() + ": can't read the card's files");
+		}
+		out.write(reinterpret_cast<const char*>(buffer.data()), count * WEBLUGE_SECTOR_SIZE);
+	}
+	if (!out) {
+		return std::unexpected(imageFile.string() + ": can't write");
+	}
+	return {};
+}
+
 std::expected<void, std::string> copyFromCard(const std::string& cardFolder, const fs::path& hostFolder) {
 	HostVector<char> buffer(1 << 20);
 	return copyFolderFromCard(cardFolder, hostFolder, buffer);
@@ -292,7 +401,8 @@ std::expected<CardImage, std::string> buildCardImage(const fs::path& folder, uin
 	if (formatted) {
 		FATFS fileSystem;
 		FRESULT result = f_mount(&fileSystem, "", 1);
-		filled = result == FR_OK ? fill(*entries) : std::unexpected("f_mount: FatFs error " + std::to_string(result));
+		filled = result == FR_OK ? fill(image, *entries)
+		                         : std::unexpected("f_mount: FatFs error " + std::to_string(result));
 		f_mount(nullptr, "", 0);
 	}
 	webluge_disk_eject();

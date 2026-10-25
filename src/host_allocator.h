@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 namespace webluge {
@@ -35,5 +36,7 @@ struct HostAllocator {
 
 template <typename T>
 using HostVector = std::vector<T, HostAllocator<T>>;
+
+using HostString = std::basic_string<char, std::char_traits<char>, HostAllocator<char>>;
 
 } // namespace webluge

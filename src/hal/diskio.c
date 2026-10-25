@@ -1,28 +1,24 @@
-// FatFs disk layer for the SD card, backed by a card image in memory. Follows the device's (RZA1/diskio.c),
+// FatFs disk layer for the SD card, backed by a card image (src/card/image.h). Follows the device's (RZA1/diskio.c),
 // including its status flags, so the firmware sees the same card states.
 
 #include "diskio.h"
 #include "disk.h"
 #include "ff.h"
-#include <string.h>
 
 void loadAnyEnqueuedClustersRoutine(void);
 
 uint8_t currentlyAccessingCard = 0;
 
-static uint8_t* image;
-static uint32_t imageSectors;
+static WeblugeDisk disk;
 static DSTATUS status = STA_NOINIT | STA_NODISK;
 
-void webluge_disk_insert(uint8_t* newImage, uint32_t numSectors) {
-	image = newImage;
-	imageSectors = numSectors;
+void webluge_disk_insert(WeblugeDisk newDisk) {
+	disk = newDisk;
 	status = STA_NOINIT;
 }
 
 void webluge_disk_eject(void) {
-	image = NULL;
-	imageSectors = 0;
+	disk = (WeblugeDisk){0};
 	status = STA_NOINIT | STA_NODISK;
 }
 
@@ -38,15 +34,11 @@ DSTATUS disk_initialize(BYTE pdrv) {
 }
 
 static int inRange(LBA_t sector, UINT count) {
-	return !(status & STA_NOINIT) && sector < imageSectors && count <= imageSectors - sector;
+	return !(status & STA_NOINIT) && sector < disk.numSectors && count <= disk.numSectors - sector;
 }
 
 DRESULT disk_read_without_streaming_first(BYTE pdrv, BYTE* buff, DWORD sector, UINT count) {
-	if (!inRange(sector, count)) {
-		return RES_ERROR;
-	}
-	memcpy(buff, image + (size_t)sector * WEBLUGE_SECTOR_SIZE, (size_t)count * WEBLUGE_SECTOR_SIZE);
-	return RES_OK;
+	return inRange(sector, count) && disk.read(disk.card, buff, sector, count) ? RES_OK : RES_ERROR;
 }
 
 DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count) {
@@ -57,11 +49,7 @@ DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count) {
 
 DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count) {
 	loadAnyEnqueuedClustersRoutine();
-	if (!inRange(sector, count)) {
-		return RES_ERROR;
-	}
-	memcpy(image + (size_t)sector * WEBLUGE_SECTOR_SIZE, buff, (size_t)count * WEBLUGE_SECTOR_SIZE);
-	return RES_OK;
+	return inRange(sector, count) && disk.write(disk.card, buff, sector, count) ? RES_OK : RES_ERROR;
 }
 
 DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff) {
@@ -72,7 +60,7 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff) {
 	case CTRL_SYNC:
 		return RES_OK;
 	case GET_SECTOR_COUNT:
-		*(LBA_t*)buff = imageSectors;
+		*(LBA_t*)buff = disk.numSectors;
 		return RES_OK;
 	default:
 		return RES_PARERR;

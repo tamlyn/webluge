@@ -2,10 +2,11 @@
 declare module "@firmware/webluge_web.mjs" {
   export type Webluge = {
     FS: {
+      mkdir(path: string): void;
       mkdirTree(path: string): void;
       writeFile(path: string, data: Uint8Array): void;
-      unlink(path: string): void;
-      rmdir(path: string): void;
+      mount(type: unknown, options: { blobs: { name: string; data: Blob }[] }, path: string): void;
+      filesystems: { WORKERFS: unknown };
     };
     HEAPF32: Float32Array;
     HEAP32: Int32Array;

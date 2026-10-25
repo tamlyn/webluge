@@ -9,7 +9,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -30,16 +29,7 @@ std::expected<webluge::CardImage, std::string> readCard(const fs::path& path,
 	if (fs::is_directory(path, error)) {
 		return webluge::buildCardImage(path, freeBytes);
 	}
-	uintmax_t size = fs::file_size(path, error);
-	if (error || !size || size % WEBLUGE_SECTOR_SIZE) {
-		return std::unexpected(path.string() + ": not a card image");
-	}
-	webluge::CardImage image(size);
-	std::ifstream in(path, std::ios::binary);
-	if (!in.read(reinterpret_cast<char*>(image.data()), size)) {
-		return std::unexpected(path.string() + ": can't read");
-	}
-	return image;
+	return webluge::openCardImage(path);
 }
 
 int image(const char* folder, const char* imagePath) {
@@ -48,10 +38,9 @@ int image(const char* folder, const char* imagePath) {
 		std::fprintf(stderr, "%s\n", image.error().c_str());
 		return 1;
 	}
-	std::ofstream out(imagePath, std::ios::binary);
-	out.write(reinterpret_cast<const char*>(image->data()), image->size());
-	if (!out) {
-		std::fprintf(stderr, "%s: can't write\n", imagePath);
+	auto saved = webluge::saveCardImage(*image, imagePath);
+	if (!saved) {
+		std::fprintf(stderr, "%s\n", saved.error().c_str());
 		return 1;
 	}
 	return 0;
@@ -64,7 +53,7 @@ bool bootAndLoad(const char* cardPath, const char* songPath, webluge::CardImage&
 		return false;
 	}
 	card = std::move(*read);
-	webluge_disk_insert(card.data(), card.size() / WEBLUGE_SECTOR_SIZE);
+	card.insert();
 	webluge::boot();
 	if (!webluge::loadSong(songPath)) {
 		std::fprintf(stderr, "Couldn't load %s\n", songPath);

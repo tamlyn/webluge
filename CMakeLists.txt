@@ -98,6 +98,7 @@ target_compile_definitions(firmware PUBLIC
 	USE_TASK_MANAGER
 	_GNU_SOURCE
 	FF_USE_MKFS=1
+	FF_USE_EXPAND=1
 )
 
 target_compile_options(firmware PUBLIC
@@ -113,13 +114,12 @@ target_compile_options(firmware PUBLIC
 
 target_link_options(firmware PUBLIC
 	-sERROR_ON_UNDEFINED_SYMBOLS=1
-	# The firmware uses fixed addresses for SDRAM (0x0C000000-0x10000000) and on-chip RAM (0x20000000-0x20300000).
-	# Starting Emscripten's own data, stack and heap above them leaves those ranges free for the firmware.
-	# Memory that's never touched costs nothing, so the gap is cheap.
-	-sGLOBAL_BASE=541065216 # 0x20400000
-	-sINITIAL_MEMORY=640mb
+	# The firmware uses fixed addresses for SDRAM (0x00400000-0x04400000) and on-chip RAM (0x04400000-0x04700000),
+	# moved down from the device's (src/include/RZA1/cpu_specific.h). Starting Emscripten's own data, stack and heap
+	# above them leaves those ranges free for the firmware.
+	-sGLOBAL_BASE=75497472 # 0x04800000
+	-sINITIAL_MEMORY=96mb
 	-sALLOW_MEMORY_GROWTH=1
-	-sMAXIMUM_MEMORY=4gb
 )
 
 # For programs run under Node: the CLI and the tests.
@@ -128,6 +128,8 @@ set(node_program_options
 	-sEXIT_RUNTIME=1
 	# Gives the program the host's filesystem, for card folders and images.
 	-sNODERAWFS=1
+	# Room for the stems an export writes to the card.
+	-sMAXIMUM_MEMORY=4gb
 )
 
 add_executable(webluge src/main.cpp)
@@ -147,6 +149,11 @@ target_link_options(webluge_web PRIVATE
 	-sEXPORT_ES6=1
 	-sEXPORT_NAME=createWebluge
 	-sFORCE_FILESYSTEM=1
+	# Reads the card's files from the page's File objects as the firmware needs them, rather than copying them in.
+	-lworkerfs.js
+	# The card's files stay outside wasm memory, so a song needs little more than the firmware's own. A phone may refuse
+	# to set aside more (docs/CLOUD.md 0.1).
+	-sMAXIMUM_MEMORY=256mb
 	-sEXPORTED_FUNCTIONS=_webluge_web_load,_webluge_web_load_preset,_webluge_web_audition,_webluge_web_play,_webluge_web_describe,_webluge_web_description_length,_webluge_web_render,_webluge_web_rendered_frames,_webluge_web_toggle_clip,_webluge_web_solo_clip,_webluge_web_switch_to_session,_webluge_web_switch_to_arrangement,_webluge_web_states,_webluge_web_frames_per_tick
 	-sEXPORTED_RUNTIME_METHODS=FS,ccall,HEAPF32,HEAP32,HEAPU8
 )

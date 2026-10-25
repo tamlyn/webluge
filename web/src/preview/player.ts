@@ -39,7 +39,7 @@ export class Player {
     const loaded = await new Promise<Response>((resolve) => {
       worker.onmessage = ({ data }: MessageEvent<Response>) => resolve(data);
       worker.onerror = (event) => resolve(workerFailed(event));
-      post(worker, { type: "load", files, path, preset }, files.map((f) => f.data.buffer as ArrayBuffer));
+      post(worker, { type: "load", files, path, preset });
     });
     if (loaded.type !== "loaded") {
       worker.terminate();
@@ -165,6 +165,6 @@ function workerFailed(event: ErrorEvent): Response {
   return { type: "error", message: event.message || "The player stopped working" };
 }
 
-function post(worker: Worker, request: Request, transfer: Transferable[] = []) {
-  worker.postMessage(request, transfer);
+function post(worker: Worker, request: Request) {
+  worker.postMessage(request);
 }

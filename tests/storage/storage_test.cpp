@@ -84,8 +84,8 @@ std::vector<uint8_t> readClusters(FATFS* fileSystem, const char* path) {
 const size_t kSizes[] = {0, 1, 511, 512, 32767, 32768, 32769, 100000, (1 << 20) + 3};
 
 void testDisk() {
-	webluge::CardImage image(64 << 20);
-	webluge_disk_insert(image.data(), image.size() / WEBLUGE_SECTOR_SIZE);
+	webluge::CardImage image((64 << 20) / WEBLUGE_SECTOR_SIZE);
+	image.insert();
 
 	MKFS_PARM options{.fmt = FM_FAT | FM_FAT32 | FM_SFD, .n_fat = 2, .align = 0, .n_root = 0, .au_size = 32768};
 	webluge::HostVector<uint8_t> work(32768);
@@ -116,7 +116,7 @@ void testDisk() {
 	}
 
 	std::vector<uint8_t> sector(WEBLUGE_SECTOR_SIZE);
-	LBA_t numSectors = image.size() / WEBLUGE_SECTOR_SIZE;
+	LBA_t numSectors = image.numSectors();
 	CHECK(disk_read_without_streaming_first(0, sector.data(), numSectors - 1, 1) == RES_OK);
 	CHECK(disk_read_without_streaming_first(0, sector.data(), numSectors, 1) == RES_ERROR);
 	CHECK(disk_read_without_streaming_first(0, sector.data(), numSectors - 1, 2) == RES_ERROR);
@@ -152,7 +152,7 @@ void testImageBuilder() {
 		std::fprintf(stderr, "%s\n", image.error().c_str());
 		return;
 	}
-	webluge_disk_insert(image->data(), image->size() / WEBLUGE_SECTOR_SIZE);
+	image->insert();
 	FATFS fileSystem;
 	CHECK(f_mount(&fileSystem, "", 1) == FR_OK);
 	CHECK(fileSystem.csize * WEBLUGE_SECTOR_SIZE == 32768);
@@ -173,8 +173,41 @@ void testImageBuilder() {
 	f_closedir(&dir);
 	CHECK(numSamples == 2); // DRUMS and Café.wav
 
+	// Writes go to the card, not the host files it reads from.
+	const char* kick = "SAMPLES/DRUMS/Kick.wav";
+	std::vector<uint8_t> changed = files[kick];
+	std::vector<uint8_t> patch = pattern(40000, 6);
+	std::copy(patch.begin(), patch.end(), changed.begin() + 20000);
+	FIL file;
+	UINT written = 0;
+	CHECK(f_open(&file, kick, FA_WRITE) == FR_OK);
+	CHECK(f_lseek(&file, 20000) == FR_OK);
+	CHECK(f_write(&file, patch.data(), patch.size(), &written) == FR_OK && written == patch.size());
+	CHECK(f_close(&file) == FR_OK);
+	f_mount(nullptr, "", 0);
+	CHECK(f_mount(&fileSystem, "", 1) == FR_OK);
+	CHECK(readFile(kick) == changed);
+	CHECK(readClusters(&fileSystem, kick) == changed);
+	std::ifstream host(folder / kick, std::ios::binary);
+	CHECK(std::vector<uint8_t>(std::istreambuf_iterator<char>(host), {}) == files[kick]);
+
 	f_mount(nullptr, "", 0);
 	webluge_disk_eject();
+
+	// Saved and opened again as an image file, it reads the same.
+	fs::path imageFile = fs::temp_directory_path() / "webluge_storage_test.img";
+	CHECK(webluge::saveCardImage(*image, imageFile).has_value());
+	auto opened = webluge::openCardImage(imageFile);
+	CHECK(opened.has_value() && opened->numSectors() == image->numSectors());
+	if (opened) {
+		opened->insert();
+		CHECK(f_mount(&fileSystem, "", 1) == FR_OK);
+		CHECK(readClusters(&fileSystem, kick) == changed);
+		CHECK(readFile("SONGS/SONG001.XML") == files["SONGS/SONG001.XML"]);
+		f_mount(nullptr, "", 0);
+		webluge_disk_eject();
+	}
+	fs::remove(imageFile);
 	fs::remove_all(folder);
 }
 

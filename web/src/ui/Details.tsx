@@ -147,9 +147,8 @@ function PresetDetails({ card, path, index, audioContext, onGoTo }: Props) {
     const edited = xml && Object.keys(edits).length ? encodeCp437(applyEdits(xml, edits)) : undefined;
     const files = async () => {
       collected.current ??= collectDocumentFiles(card, path);
-      // Copied, as loading hands each file's buffer over to the worker.
       const all = await collected.current;
-      return all.map((f) => ({ ...f, data: f.path === path && edited ? edited : f.data.slice() }));
+      return all.map((f) => (f.path === path && edited ? { ...f, data: new Blob([edited]) } : f));
     };
     const delay = collected.current ? editDelay : browseDelay;
     return loadPlayer(files, path, true, delay, failed, (loaded) => {
